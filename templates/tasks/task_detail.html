@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ task.title }} — VolunteerCoord{% endblock %}
+
+{% block extra_head %}
+<style>#detail-map { height: 300px; border-radius: 8px; }</style>
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/tasks/">Tasks</a></li>
+        <li class="breadcrumb-item active">{{ task.title }}</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h3>{{ task.title }}</h3>
+                    <span class="badge fs-6
+                        {% if task.status == 'open' %}bg-danger
+                        {% elif task.status == 'in_progress' %}bg-warning text-dark
+                        {% else %}bg-success{% endif %}">
+                        {{ task.get_status_display }}
+                    </span>
+                </div>
+                <p>{{ task.description }}</p>
+                <hr>
+                <dl class="row">
+                    <dt class="col-sm-4">Priority</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge badge-priority-{{ task.priority }}">{{ task.get_priority_display }}</span>
+                    </dd>
+                    <dt class="col-sm-4">Address</dt>
+                    <dd class="col-sm-8">{{ task.address }}</dd>
+                    {% if task.has_coordinates %}
+                    <dt class="col-sm-4">Coordinates</dt>
+                    <dd class="col-sm-8">{{ task.latitude|floatformat:5 }}, {{ task.longitude|floatformat:5 }}</dd>
+                    {% endif %}
+                    <dt class="col-sm-4">Created by</dt>
+                    <dd class="col-sm-8">{{ task.created_by }}</dd>
+                    {% if task.assigned_to %}
+                    <dt class="col-sm-4">Assigned to</dt>
+                    <dd class="col-sm-8">{{ task.assigned_to }}</dd>
+                    {% endif %}
+                    <dt class="col-sm-4">Created</dt>
+                    <dd class="col-sm-8">{{ task.created_at|date:"d M Y H:i" }}</dd>
+                </dl>
+
+                <div class="d-flex gap-2 mt-3">
+                    {% if task.status == 'open' and user.role == 'volunteer' %}
+                        <form method="post" action="/tasks/{{ task.id }}/accept/">
+                            {% csrf_token %}
+                            <button class="btn btn-success"><i class="bi bi-check-lg"></i> Accept Task</button>
+                        </form>
+                    {% endif %}
+                    {% if task.status == 'in_progress' %}
+                        {% if user.role == 'coordinator' or task.assigned_to == user %}
+                            <form method="post" action="/tasks/{{ task.id }}/complete/">
+                                {% csrf_token %}
+                                <button class="btn btn-primary"><i class="bi bi-flag"></i> Mark Complete</button>
+                            </form>
+                        {% endif %}
+                    {% endif %}
+                    {% if user.role == 'coordinator' %}
+                        <a href="/tasks/{{ task.id }}/edit/" class="btn btn-outline-secondary">
+                            <i class="bi bi-pencil"></i> Edit
+                        </a>
+                    {% endif %}
+                    <a href="/tasks/" class="btn btn-outline-secondary ms-auto">← Back</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if task.has_coordinates %}
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-header">Location</div>
+            <div class="card-body p-2">
+                <div id="detail-map"></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if task.has_coordinates %}
+<script>
+const map = L.map('detail-map').setView([{{ task.latitude }}, {{ task.longitude }}], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+L.marker([{{ task.latitude }}, {{ task.longitude }}])
+    .bindPopup("{{ task.title|escapejs }}")
+    .addTo(map)
+    .openPopup();
+</script>
+{% endif %}
+{% endblock %}

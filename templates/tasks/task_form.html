@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Task — VolunteerCoord{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="mb-4">{{ action }} Task</h3>
+                <form method="post">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">{{ field.label }}</label>
+                            {% if field.field.widget.input_type == 'select' %}
+                                <select name="{{ field.html_name }}" class="form-select {% if field.errors %}is-invalid{% endif %}">
+                                    {% for value, label in field.field.choices %}
+                                        <option value="{{ value }}" {% if field.value|stringformat:"s" == value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% elif field.field.widget.input_type == 'textarea' %}
+                                <textarea name="{{ field.html_name }}"
+                                          class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                          rows="4">{{ field.value|default:'' }}</textarea>
+                            {% else %}
+                                <input type="{{ field.field.widget.input_type }}"
+                                       name="{{ field.html_name }}"
+                                       class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                       value="{{ field.value|default:'' }}">
+                            {% endif %}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endfor %}
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i>
+                        The address will be automatically geocoded using <strong>Nominatim/OpenStreetMap</strong>.
+                        Use a full address (e.g. "вул. Хрещатик, 22, Київ, Україна") for best results.
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">{{ action }} Task</button>
+                        <a href="/tasks/" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
