@@ -6,31 +6,81 @@
         <div class="card shadow-sm">
             <div class="card-body p-4">
                 <h3 class="card-title mb-4"><i class="bi bi-person-plus"></i> Create Account</h3>
-                <form method="post">
+                <form method="post" id="register-form">
                     {% csrf_token %}
                     {% for field in form %}
+                        {% if field.html_name == 'organization_choice' or field.html_name == 'new_organization_name' %}
+                            {# Rendered separately below #}
+                        {% else %}
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">{{ field.label }}</label>
+                                {% if field.field.widget.input_type == 'select' %}
+                                    <select name="{{ field.html_name }}" id="id_{{ field.html_name }}"
+                                            class="form-select {% if field.errors %}is-invalid{% endif %}">
+                                        {% for value, label in field.field.choices %}
+                                            <option value="{{ value }}" {% if field.value == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}
+                                    <input type="{{ field.field.widget.input_type }}"
+                                           name="{{ field.html_name }}"
+                                           id="id_{{ field.html_name }}"
+                                           class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                           {% if field.value %}value="{{ field.value }}"{% endif %}>
+                                {% endif %}
+                                {% if field.help_text %}
+                                    <div class="form-text text-muted">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% for error in field.errors %}
+                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+
+                    {# Organization section — shown only for coordinators #}
+                    <div id="org-section" style="display:none;" class="border rounded p-3 mb-3 bg-light">
+                        <h6 class="mb-3"><i class="bi bi-building"></i> Organization</h6>
+
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">{{ field.label }}</label>
-                            {% if field.field.widget.input_type == 'select' %}
-                                <select name="{{ field.html_name }}" class="form-select {% if field.errors %}is-invalid{% endif %}">
-                                    {% for value, label in field.field.choices %}
-                                        <option value="{{ value }}" {% if field.value == value %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                            {% else %}
-                                <input type="{{ field.field.widget.input_type }}"
-                                       name="{{ field.html_name }}"
-                                       class="form-control {% if field.errors %}is-invalid{% endif %}"
-                                       {% if field.value %}value="{{ field.value }}"{% endif %}>
-                            {% endif %}
-                            {% if field.help_text %}
-                                <div class="form-text text-muted">{{ field.help_text }}</div>
-                            {% endif %}
-                            {% for error in field.errors %}
+                            <label class="form-label fw-semibold">{{ form.organization_choice.label }}</label>
+                            <select name="{{ form.organization_choice.html_name }}"
+                                    id="id_organization_choice"
+                                    class="form-select {% if form.organization_choice.errors %}is-invalid{% endif %}">
+                                {% for value, label in form.organization_choice.field.choices %}
+                                    <option value="{{ value }}"
+                                        {% if form.organization_choice.value == value %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            {% for error in form.organization_choice.errors %}
                                 <div class="invalid-feedback d-block">{{ error }}</div>
                             {% endfor %}
                         </div>
-                    {% endfor %}
+
+                        <div id="new-org-section" style="display:none;" class="mb-3">
+                            <label class="form-label fw-semibold">{{ form.new_organization_name.label }}</label>
+                            <input type="text"
+                                   name="{{ form.new_organization_name.html_name }}"
+                                   id="id_new_organization_name"
+                                   class="form-control {% if form.new_organization_name.errors %}is-invalid{% endif %}"
+                                   {% if form.new_organization_name.value %}value="{{ form.new_organization_name.value }}"{% endif %}
+                                   placeholder="e.g. Kyiv Volunteer Foundation">
+                            {% if form.new_organization_name.help_text %}
+                                <div class="form-text text-muted">{{ form.new_organization_name.help_text }}</div>
+                            {% endif %}
+                            {% for error in form.new_organization_name.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="form-text text-muted">
+                            <i class="bi bi-info-circle"></i>
+                            After registration, your account will need to be verified before you can create or manage tasks.
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-success w-100">Register</button>
                 </form>
                 <hr>
@@ -39,4 +89,32 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    const roleSelect = document.getElementById('id_role');
+    const orgSection = document.getElementById('org-section');
+    const orgChoiceSelect = document.getElementById('id_organization_choice');
+    const newOrgSection = document.getElementById('new-org-section');
+
+    function toggleOrgSection() {
+        const isCoordinator = roleSelect && roleSelect.value === 'coordinator';
+        orgSection.style.display = isCoordinator ? 'block' : 'none';
+        toggleNewOrgName();
+    }
+
+    function toggleNewOrgName() {
+        const isNew = orgChoiceSelect && orgChoiceSelect.value === '__new__';
+        newOrgSection.style.display = isNew ? 'block' : 'none';
+    }
+
+    if (roleSelect) roleSelect.addEventListener('change', toggleOrgSection);
+    if (orgChoiceSelect) orgChoiceSelect.addEventListener('change', toggleNewOrgName);
+
+    // Initialize on page load (handles re-render after validation errors)
+    toggleOrgSection();
+}());
+</script>
 {% endblock %}

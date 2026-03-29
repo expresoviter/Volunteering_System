@@ -41,33 +41,74 @@
                     {% endif %}
                     <dt class="col-sm-4">Created by</dt>
                     <dd class="col-sm-8">{{ task.created_by }}</dd>
-                    {% if task.assigned_to %}
-                    <dt class="col-sm-4">Assigned to</dt>
-                    <dd class="col-sm-8">{{ task.assigned_to }}</dd>
-                    {% endif %}
+                    <dt class="col-sm-4">Volunteers</dt>
+                    <dd class="col-sm-8">
+                        <span class="fw-semibold">{{ task.volunteers_count }} / {{ task.volunteers_needed }}</span>
+                        {% if task.status == 'open' and task.slots_available %}
+                            <span class="badge bg-success ms-1">slots open</span>
+                        {% endif %}
+                        {% if assigned_volunteers %}
+                            <ul class="list-unstyled mt-1 mb-0">
+                                {% for vol in assigned_volunteers %}
+                                    <li class="small text-muted"><i class="bi bi-person-check"></i> {{ vol.username }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </dd>
                     <dt class="col-sm-4">Created</dt>
                     <dd class="col-sm-8">{{ task.created_at|date:"d M Y H:i" }}</dd>
                 </dl>
 
-                <div class="d-flex gap-2 mt-3">
+                <div class="d-flex gap-2 mt-3 flex-wrap">
                     {% if task.status == 'open' and user.role == 'volunteer' %}
-                        <form method="post" action="/tasks/{{ task.id }}/accept/">
-                            {% csrf_token %}
-                            <button class="btn btn-success"><i class="bi bi-check-lg"></i> Accept Task</button>
-                        </form>
+                        {% if user_already_accepted %}
+                            <span class="btn btn-success disabled">
+                                <i class="bi bi-check-circle"></i> Already Accepted
+                            </span>
+                        {% elif task.slots_available %}
+                            <form method="post" action="/tasks/{{ task.id }}/accept/">
+                                {% csrf_token %}
+                                <button class="btn btn-success">
+                                    <i class="bi bi-check-lg"></i> Accept Task
+                                </button>
+                            </form>
+                        {% else %}
+                            <span class="btn btn-secondary disabled">No Slots Available</span>
+                        {% endif %}
                     {% endif %}
-                    {% if task.status == 'in_progress' %}
-                        {% if user.role == 'coordinator' or task.assigned_to == user %}
+
+                    {% if user.role == 'coordinator' and task.status != 'completed' %}
+                        {% if task.status == 'in_progress' or task.volunteers_count > 0 %}
                             <form method="post" action="/tasks/{{ task.id }}/complete/">
                                 {% csrf_token %}
-                                <button class="btn btn-primary"><i class="bi bi-flag"></i> Mark Complete</button>
+                                <button class="btn btn-primary">
+                                    <i class="bi bi-flag"></i> Mark Complete
+                                </button>
                             </form>
                         {% endif %}
                     {% endif %}
+
                     {% if user.role == 'coordinator' %}
                         <a href="/tasks/{{ task.id }}/edit/" class="btn btn-outline-secondary">
                             <i class="bi bi-pencil"></i> Edit
                         </a>
+                        {% if task.volunteers_count > 0 or task.status == 'completed' %}
+                        <form method="post" action="/tasks/{{ task.id }}/delete/"
+                              onsubmit="return confirm('This task has been taken or completed and will be archived. Continue?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-archive"></i> Archive
+                            </button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/tasks/{{ task.id }}/delete/"
+                              onsubmit="return confirm('Delete this task permanently?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </form>
+                        {% endif %}
                     {% endif %}
                     <a href="/tasks/" class="btn btn-outline-secondary ms-auto">← Back</a>
                 </div>

@@ -32,7 +32,12 @@
                 <li class="nav-item"><a class="nav-link" href="/tasks/"><i class="bi bi-list-task"></i> Tasks</a></li>
                 {% if user.is_authenticated %}
                     {% if user.role == 'coordinator' %}
-                        <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> New Task</a></li>
+                        {% if user.is_verified %}
+                            <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> New Task</a></li>
+                            {% if user.organization and user.organization.is_verified %}
+                                <li class="nav-item"><a class="nav-link" href="/accounts/verify-coordinators/"><i class="bi bi-person-check"></i> Verify Members</a></li>
+                            {% endif %}
+                        {% endif %}
                         <li class="nav-item"><a class="nav-link" href="/admin/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
                     {% else %}
                         <li class="nav-item"><a class="nav-link" href="/volunteers/profile/"><i class="bi bi-person"></i> My Profile</a></li>
@@ -45,11 +50,34 @@
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-person-circle"></i> {{ user.username }}
                             <span class="badge bg-light text-primary ms-1">{{ user.get_role_display }}</span>
+                            {% if user.role == 'coordinator' and not user.is_verified %}
+                                <span class="badge bg-warning text-dark ms-1">Pending</span>
+                            {% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="/accounts/logout/">
-                                <i class="bi bi-box-arrow-right"></i> Logout
-                            </a></li>
+                            {% if user.organization %}
+                                <li><span class="dropdown-item-text text-muted small">
+                                    <i class="bi bi-building"></i> {{ user.organization.name }}
+                                    {% if user.organization.is_verified %}
+                                        <i class="bi bi-patch-check-fill text-success"></i>
+                                    {% endif %}
+                                </span></li>
+                                <li><hr class="dropdown-divider"></li>
+                            {% endif %}
+                            <li>
+                                <a href="/accounts/delete/" class="dropdown-item text-danger">
+                                    <i class="bi bi-trash3"></i> Delete Account
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form method="post" action="/accounts/logout/" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="bi bi-box-arrow-right"></i> Logout
+                                    </button>
+                                </form>
+                            </li>
                         </ul>
                     </li>
                 {% else %}
@@ -62,6 +90,15 @@
 </nav>
 
 <div class="container mt-4">
+    {% if user.is_authenticated and user.role == 'coordinator' and not user.is_verified %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <i class="bi bi-hourglass-split"></i>
+            <strong>Account pending verification.</strong>
+            You can browse tasks, but you won't be able to create or manage them until an admin or a verified organization coordinator approves your account.
+            <a href="/accounts/pending-verification/" class="alert-link">Learn more</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    {% endif %}
     {% for message in messages %}
         <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
             {{ message }}

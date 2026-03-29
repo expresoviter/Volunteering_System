@@ -22,6 +22,6 @@ class VolunteerProfile(models.Model):
     def completed_tasks_count(self):
         from apps.tasks.models import Task
         return Task.objects.filter(
-            assigned_to=self.user,
+            assigned_volunteers=self.user,
             status=Task.Status.COMPLETED,
         ).count()

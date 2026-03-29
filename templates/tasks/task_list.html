@@ -14,7 +14,10 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2><i class="bi bi-list-task"></i> Tasks</h2>
     {% if user.role == 'coordinator' %}
-        <a href="/tasks/create/" class="btn btn-primary"><i class="bi bi-plus"></i> New Task</a>
+        <div class="d-flex gap-2">
+            <a href="/tasks/archive/" class="btn btn-outline-secondary"><i class="bi bi-archive"></i> Archived Tasks</a>
+            <a href="/tasks/create/" class="btn btn-primary"><i class="bi bi-plus"></i> New Task</a>
+        </div>
     {% endif %}
 </div>
 
@@ -55,12 +58,19 @@
                 <p class="card-text text-muted small">{{ task.description|truncatechars:100 }}</p>
                 <p class="small text-muted"><i class="bi bi-geo-alt"></i> {{ task.address|truncatechars:60 }}</p>
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="badge
-                        {% if task.status == 'open' %}bg-danger
-                        {% elif task.status == 'in_progress' %}bg-warning text-dark
-                        {% else %}bg-success{% endif %}">
-                        {{ task.get_status_display }}
-                    </span>
+                    <div class="d-flex gap-1 align-items-center">
+                        <span class="badge
+                            {% if task.status == 'open' %}bg-danger
+                            {% elif task.status == 'in_progress' %}bg-warning text-dark
+                            {% else %}bg-success{% endif %}">
+                            {{ task.get_status_display }}
+                        </span>
+                        {% if task.volunteers_needed > 1 or task.volunteers_count > 0 %}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-people"></i> {{ task.volunteers_count }}/{{ task.volunteers_needed }}
+                            </span>
+                        {% endif %}
+                    </div>
                     <a href="/tasks/{{ task.id }}/" class="btn btn-sm btn-outline-primary">View</a>
                 </div>
             </div>

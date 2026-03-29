@@ -10,11 +10,11 @@ def profile(request):
 
     user = request.user
     active_task = Task.objects.filter(
-        assigned_to=user,
+        assigned_volunteers=user,
         status=Task.Status.IN_PROGRESS,
     ).first()
     completed_tasks = Task.objects.filter(
-        assigned_to=user,
+        assigned_volunteers=user,
         status=Task.Status.COMPLETED,
     ).order_by('-updated_at')
 

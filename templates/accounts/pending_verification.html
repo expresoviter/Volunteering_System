@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Pending Verification — VolunteerCoord{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card shadow-sm border-warning">
+            <div class="card-body p-4 text-center">
+                <div class="mb-3">
+                    <i class="bi bi-hourglass-split text-warning" style="font-size: 3rem;"></i>
+                </div>
+                <h3 class="card-title">Account Pending Verification</h3>
+                <p class="text-muted mb-4">
+                    Your coordinator account has been created, but you need to be verified
+                    before you can create or manage tasks.
+                </p>
+
+                {% if org %}
+                    <div class="alert alert-info text-start">
+                        <strong><i class="bi bi-building"></i> Your organization:</strong> {{ org.name }}
+                        {% if org.is_verified %}
+                            <span class="badge bg-success ms-2">Verified</span>
+                        {% else %}
+                            <span class="badge bg-secondary ms-2">Not verified yet</span>
+                        {% endif %}
+                    </div>
+
+                    {% if org_has_verifiers %}
+                        <p>
+                            Other verified coordinators in <strong>{{ org.name }}</strong> can verify your account.
+                            Please contact them directly.
+                        </p>
+                    {% elif org.is_verified %}
+                        <p>
+                            Your organization is verified. An admin can verify your individual account.
+                        </p>
+                    {% else %}
+                        <p>
+                            Your organization is not yet verified. An admin needs to verify
+                            <strong>{{ org.name }}</strong> or your individual account.
+                        </p>
+                    {% endif %}
+                {% else %}
+                    <p>
+                        You registered without an organization.
+                        An admin needs to verify your account manually.
+                    </p>
+                {% endif %}
+
+                <hr>
+                <p class="text-muted small">
+                    <i class="bi bi-shield-check"></i>
+                    Admins can verify accounts and organizations via the
+                    <a href="/admin/">admin panel</a>.
+                </p>
+
+                <div class="mt-3">
+                    <a href="/tasks/" class="btn btn-outline-secondary">
+                        <i class="bi bi-list-task"></i> Browse Tasks (read-only)
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

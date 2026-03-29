@@ -20,21 +20,21 @@ class Task(models.Model):
     longitude = models.FloatField(null=True, blank=True)
     priority = models.IntegerField(choices=Priority.choices, default=Priority.MEDIUM)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    volunteers_needed = models.PositiveIntegerField(default=1)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         related_name='created_tasks',
     )
-    assigned_to = models.ForeignKey(
+    assigned_volunteers = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
-        related_name='assigned_tasks',
+        related_name='accepted_tasks',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-priority', '-created_at']
@@ -45,3 +45,11 @@ class Task(models.Model):
     @property
     def has_coordinates(self):
         return self.latitude is not None and self.longitude is not None
+
+    @property
+    def volunteers_count(self):
+        return self.assigned_volunteers.count()
+
+    @property
+    def slots_available(self):
+        return self.volunteers_count < self.volunteers_needed

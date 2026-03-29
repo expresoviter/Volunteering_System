@@ -28,7 +28,7 @@ def task_list(request):
     volunteer_lon = request.session.get('volunteer_lon')
 
     if user.is_coordinator():
-        tasks = Task.objects.select_related('created_by', 'assigned_to').all()
+        tasks = Task.objects.filter(is_archived=False).prefetch_related('assigned_volunteers', 'created_by')
         recommended_ids = set()
     else:
         # Volunteer view: filter by radius if location is known
@@ -36,7 +36,7 @@ def task_list(request):
             from django.conf import settings
             from geopy.distance import geodesic
             radius_km = settings.TASK_RADIUS_KM
-            open_tasks = Task.objects.filter(status=Task.Status.OPEN)
+            open_tasks = Task.objects.filter(status=Task.Status.OPEN, is_archived=False)
             nearby_tasks = []
             for task in open_tasks:
                 if task.has_coordinates:
@@ -48,7 +48,7 @@ def task_list(request):
                         nearby_tasks.append(task)
             tasks = Task.objects.filter(
                 id__in=[t.id for t in nearby_tasks]
-            ).select_related('created_by', 'assigned_to')
+            ).prefetch_related('assigned_volunteers', 'created_by')
 
             recommended_ids = get_recommended_tasks_for_volunteer(
                 volunteer_id=user.id,
@@ -57,7 +57,9 @@ def task_list(request):
                 open_tasks=nearby_tasks,
             )
         else:
-            tasks = Task.objects.filter(status=Task.Status.OPEN).select_related('created_by', 'assigned_to')
+            tasks = Task.objects.filter(
+                status=Task.Status.OPEN, is_archived=False
+            ).prefetch_related('assigned_volunteers', 'created_by')
             recommended_ids = set()
 
     # Build GeoJSON for map markers
@@ -73,6 +75,8 @@ def task_list(request):
                     'status': task.status,
                     'priority': task.priority,
                     'recommended': task.id in recommended_ids,
+                    'volunteers_count': task.volunteers_count,
+                    'volunteers_needed': task.volunteers_needed,
                     'url': f'/tasks/{task.id}/',
                 },
             })
@@ -91,7 +95,13 @@ def task_list(request):
 @login_required
 def task_detail(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    return render(request, 'tasks/task_detail.html', {'task': task})
+    assigned_volunteers = task.assigned_volunteers.all()
+    user_already_accepted = request.user in assigned_volunteers
+    return render(request, 'tasks/task_detail.html', {
+        'task': task,
+        'assigned_volunteers': assigned_volunteers,
+        'user_already_accepted': user_already_accepted,
+    })
 
 
 @login_required
@@ -99,13 +109,15 @@ def task_create(request):
     if not request.user.is_coordinator():
         messages.error(request, "Only coordinators can create tasks.")
         return redirect('tasks:task_list')
+    if not request.user.can_work():
+        messages.warning(request, "Your account is pending verification.")
+        return redirect('accounts:pending_verification')
 
     if request.method == 'POST':
         form = TaskForm(request.POST)
         if form.is_valid():
             task = form.save(commit=False)
             task.created_by = request.user
-            # Geocode the address
             lat, lon = geocode_address(task.address)
             task.latitude = lat
             task.longitude = lon
@@ -131,6 +143,9 @@ def task_edit(request, pk):
     if not request.user.is_coordinator():
         messages.error(request, "Only coordinators can edit tasks.")
         return redirect('tasks:task_detail', pk=pk)
+    if not request.user.can_work():
+        messages.warning(request, "Your account is pending verification.")
+        return redirect('accounts:pending_verification')
 
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
@@ -150,15 +165,56 @@ def task_edit(request, pk):
 
 @login_required
 @require_POST
+def task_delete(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if not request.user.is_coordinator():
+        messages.error(request, "Only coordinators can delete tasks.")
+        return redirect('tasks:task_detail', pk=pk)
+    if not request.user.can_work():
+        messages.warning(request, "Your account is pending verification.")
+        return redirect('accounts:pending_verification')
+    if task.assigned_volunteers.exists() or task.status == Task.Status.COMPLETED:
+        task.is_archived = True
+        task.save(update_fields=['is_archived'])
+        messages.success(request, f"Task '{task.title}' archived.")
+    else:
+        task.delete()
+        messages.success(request, f"Task '{task.title}' deleted.")
+    return redirect('tasks:task_list')
+
+
+@login_required
+def task_archive_list(request):
+    if not request.user.is_coordinator():
+        messages.error(request, "Only coordinators can view the archive.")
+        return redirect('tasks:task_list')
+    if not request.user.can_work():
+        messages.warning(request, "Your account is pending verification.")
+        return redirect('accounts:pending_verification')
+    archived_tasks = Task.objects.filter(is_archived=True).prefetch_related('assigned_volunteers', 'created_by')
+    return render(request, 'tasks/task_archive.html', {'archived_tasks': archived_tasks})
+
+
+@login_required
+@require_POST
 def task_accept(request, pk):
-    """Volunteer accepts an open task → status becomes In Progress."""
+    """Volunteer accepts an open task — added to assigned_volunteers."""
     task = get_object_or_404(Task, pk=pk, status=Task.Status.OPEN)
     if not request.user.is_volunteer():
         messages.error(request, "Only volunteers can accept tasks.")
         return redirect('tasks:task_detail', pk=pk)
-    task.status = Task.Status.IN_PROGRESS
-    task.assigned_to = request.user
-    task.save()
+    if request.user in task.assigned_volunteers.all():
+        messages.warning(request, "You have already accepted this task.")
+        return redirect('tasks:task_detail', pk=pk)
+    if not task.slots_available:
+        messages.error(request, "This task has no available slots.")
+        return redirect('tasks:task_detail', pk=pk)
+
+    task.assigned_volunteers.add(request.user)
+    if task.assigned_volunteers.count() >= task.volunteers_needed:
+        task.status = Task.Status.IN_PROGRESS
+        task.save(update_fields=['status', 'updated_at'])
+
     messages.success(request, f"You accepted task '{task.title}'.")
     return redirect('tasks:task_detail', pk=pk)
 
@@ -166,11 +222,17 @@ def task_accept(request, pk):
 @login_required
 @require_POST
 def task_complete(request, pk):
-    """Mark a task as Completed."""
-    task = get_object_or_404(Task, pk=pk, status=Task.Status.IN_PROGRESS)
+    """Mark a task as Completed. Only coordinators can do this."""
+    task = get_object_or_404(Task, pk=pk)
     user = request.user
-    if not (user.is_coordinator() or task.assigned_to == user):
-        messages.error(request, "You do not have permission to complete this task.")
+    if not user.is_coordinator():
+        messages.error(request, "Only coordinators can mark tasks as completed.")
+        return redirect('tasks:task_detail', pk=pk)
+    if not user.can_work():
+        messages.warning(request, "Your account is pending verification.")
+        return redirect('accounts:pending_verification')
+    if task.status == Task.Status.COMPLETED:
+        messages.warning(request, "Task is already completed.")
         return redirect('tasks:task_detail', pk=pk)
     task.status = Task.Status.COMPLETED
     task.save()
@@ -192,7 +254,6 @@ def update_location(request):
     request.session['volunteer_lat'] = lat
     request.session['volunteer_lon'] = lon
 
-    # Also persist to profile if volunteer
     if request.user.is_volunteer():
         profile, _ = VolunteerProfile.objects.get_or_create(user=request.user)
         profile.last_latitude = lat
@@ -205,7 +266,7 @@ def update_location(request):
 @login_required
 def tasks_geojson(request):
     """API endpoint returning all map-visible tasks as GeoJSON."""
-    tasks = Task.objects.exclude(latitude=None).select_related('created_by')
+    tasks = Task.objects.filter(is_archived=False).exclude(latitude=None).prefetch_related('assigned_volunteers', 'created_by')
     features = []
     for task in tasks:
         features.append({
@@ -216,6 +277,8 @@ def tasks_geojson(request):
                 'title': task.title,
                 'status': task.status,
                 'priority': task.priority,
+                'volunteers_count': task.volunteers_count,
+                'volunteers_needed': task.volunteers_needed,
                 'url': f'/tasks/{task.id}/',
             },
         })

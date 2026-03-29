@@ -1,9 +1,15 @@
-from django.contrib.auth import login
+from django.contrib import messages
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
-from django.shortcuts import redirect
-from django.views.generic import CreateView
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
-from .forms import RegistrationForm
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+from django.views.generic import CreateView
+
+from .forms import ORG_NEW, RegistrationForm
+from .models import Organization, User
 
 
 class RegisterView(CreateView):
@@ -11,15 +17,38 @@ class RegisterView(CreateView):
     template_name = 'accounts/register.html'
     success_url = reverse_lazy('tasks:task_list')
 
-    def form_valid(self, form):
-        user = form.save()
-        login(self.request, user)
-        return redirect(self.success_url)
-
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
             return redirect('tasks:task_list')
         return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        user = form.save(commit=False)
+        org_choice = form.cleaned_data.get('organization_choice', '')
+        new_org_name = form.cleaned_data.get('new_organization_name', '').strip()
+
+        if user.role == User.Role.COORDINATOR:
+            if org_choice == ORG_NEW and new_org_name:
+                org = Organization.objects.create(name=new_org_name)
+                user.organization = org
+            elif org_choice and org_choice != ORG_NEW:
+                try:
+                    user.organization = Organization.objects.get(pk=int(org_choice))
+                except (Organization.DoesNotExist, ValueError):
+                    pass
+
+        user.save()
+
+        # Set created_by after user has a PK
+        if user.role == User.Role.COORDINATOR and org_choice == ORG_NEW and new_org_name:
+            user.organization.created_by = user
+            user.organization.save(update_fields=['created_by'])
+
+        login(self.request, user)
+
+        if user.is_coordinator() and not user.is_verified:
+            return redirect('accounts:pending_verification')
+        return redirect(self.success_url)
 
 
 class CustomLoginView(LoginView):
@@ -29,3 +58,97 @@ class CustomLoginView(LoginView):
         if request.user.is_authenticated:
             return redirect('tasks:task_list')
         return super().dispatch(request, *args, **kwargs)
+
+    def get_success_url(self):
+        user = self.request.user
+        if user.is_coordinator() and not user.is_verified:
+            return reverse_lazy('accounts:pending_verification')
+        return super().get_success_url()
+
+
+@login_required
+def pending_verification(request):
+    """Shown to coordinators who are not yet verified."""
+    user = request.user
+    if not user.is_coordinator():
+        return redirect('tasks:task_list')
+    if user.is_verified:
+        return redirect('tasks:task_list')
+
+    org = user.organization
+    org_has_verifiers = (
+        org is not None
+        and org.is_verified
+        and org.members.filter(role=User.Role.COORDINATOR, is_verified=True).exclude(pk=user.pk).exists()
+    )
+    return render(request, 'accounts/pending_verification.html', {
+        'org': org,
+        'org_has_verifiers': org_has_verifiers,
+    })
+
+
+@login_required
+def verify_coordinators(request):
+    """
+    Verified coordinators of a verified organization can verify
+    other pending coordinators in their org.
+    """
+    user = request.user
+    if not user.is_coordinator() or not user.is_verified:
+        return redirect('tasks:task_list')
+
+    org = user.organization
+    if org is None or not org.is_verified:
+        messages.info(request, "This page is only available for coordinators of verified organizations.")
+        return redirect('tasks:task_list')
+
+    pending = (
+        User.objects
+        .filter(organization=org, role=User.Role.COORDINATOR, is_verified=False)
+        .exclude(pk=user.pk)
+    )
+    return render(request, 'accounts/verify_coordinators.html', {
+        'org': org,
+        'pending': pending,
+    })
+
+
+@login_required
+def delete_account(request):
+    """
+    GET: show confirmation page.
+    POST: soft-delete the account (is_active=False + deleted_at timestamp).
+    All task history is preserved in the database.
+    """
+    if request.method == 'POST':
+        user = request.user
+        user.is_active = False
+        user.deleted_at = timezone.now()
+        user.save(update_fields=['is_active', 'deleted_at'])
+        logout(request)
+        messages.success(request, "Your account has been permanently deleted.")
+        return redirect('accounts:login')
+    return render(request, 'accounts/delete_account.html')
+
+
+@login_required
+@require_POST
+def verify_coordinator(request, pk):
+    """POST action: verify a specific coordinator within the same org."""
+    user = request.user
+    if not user.is_coordinator() or not user.is_verified:
+        messages.error(request, "You do not have permission to verify coordinators.")
+        return redirect('tasks:task_list')
+
+    org = user.organization
+    if org is None or not org.is_verified:
+        messages.error(request, "Only coordinators of verified organizations can verify members.")
+        return redirect('tasks:task_list')
+
+    target = get_object_or_404(
+        User, pk=pk, organization=org, role=User.Role.COORDINATOR, is_verified=False
+    )
+    target.is_verified = True
+    target.save(update_fields=['is_verified'])
+    messages.success(request, f"{target.username} has been verified and can now use the platform.")
+    return redirect('accounts:verify_coordinators')
