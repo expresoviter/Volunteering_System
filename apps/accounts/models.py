@@ -58,5 +58,16 @@ class User(AbstractUser):
         """Returns True if the user has full platform access."""
         return self.is_volunteer() or self.is_verified or self.is_superuser
 
+    def can_manage_task(self, task):
+        """Returns True if this coordinator may edit/delete the given task."""
+        if not self.is_coordinator():
+            return False
+        if self.organization and self.organization.is_verified:
+            return (
+                task.created_by is not None
+                and task.created_by.organization_id == self.organization_id
+            )
+        return task.created_by_id == self.pk
+
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"

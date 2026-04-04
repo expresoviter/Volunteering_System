@@ -40,7 +40,12 @@
                     <dd class="col-sm-8">{{ task.latitude|floatformat:5 }}, {{ task.longitude|floatformat:5 }}</dd>
                     {% endif %}
                     <dt class="col-sm-4">Created by</dt>
-                    <dd class="col-sm-8">{{ task.created_by }}</dd>
+                    <dd class="col-sm-8">
+                        {{ task.created_by }}
+                        {% if task.created_by.organization and task.created_by.organization.is_verified %}
+                            <span class="text-muted small">(<i class="bi bi-building"></i> {{ task.created_by.organization.name }})</span>
+                        {% endif %}
+                    </dd>
                     <dt class="col-sm-4">Volunteers</dt>
                     <dd class="col-sm-8">
                         <span class="fw-semibold">{{ task.volunteers_count }} / {{ task.volunteers_needed }}</span>
@@ -60,12 +65,21 @@
                 </dl>
 
                 <div class="d-flex gap-2 mt-3 flex-wrap">
-                    {% if task.status == 'open' and user.role == 'volunteer' %}
+                    {% if user.role == 'volunteer' %}
                         {% if user_already_accepted %}
                             <span class="btn btn-success disabled">
                                 <i class="bi bi-check-circle"></i> Already Accepted
                             </span>
-                        {% elif task.slots_available %}
+                            {% if task.status != 'completed' %}
+                            <form method="post" action="/tasks/{{ task.id }}/unaccept/"
+                                  onsubmit="return confirm('Withdraw from this task?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger">
+                                    <i class="bi bi-x-circle"></i> Withdraw
+                                </button>
+                            </form>
+                            {% endif %}
+                        {% elif task.status != 'completed' and task.slots_available %}
                             <form method="post" action="/tasks/{{ task.id }}/accept/">
                                 {% csrf_token %}
                                 <button class="btn btn-success">
@@ -77,7 +91,7 @@
                         {% endif %}
                     {% endif %}
 
-                    {% if user.role == 'coordinator' and task.status != 'completed' %}
+                    {% if can_manage and task.status != 'completed' %}
                         {% if task.status == 'in_progress' or task.volunteers_count > 0 %}
                             <form method="post" action="/tasks/{{ task.id }}/complete/">
                                 {% csrf_token %}
@@ -88,7 +102,7 @@
                         {% endif %}
                     {% endif %}
 
-                    {% if user.role == 'coordinator' %}
+                    {% if can_manage %}
                         <a href="/tasks/{{ task.id }}/edit/" class="btn btn-outline-secondary">
                             <i class="bi bi-pencil"></i> Edit
                         </a>

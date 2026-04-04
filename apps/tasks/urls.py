@@ -11,6 +11,7 @@ urlpatterns = [
     path('<int:pk>/edit/', views.task_edit, name='task_edit'),
     path('<int:pk>/delete/', views.task_delete, name='task_delete'),
     path('<int:pk>/accept/', views.task_accept, name='task_accept'),
+    path('<int:pk>/unaccept/', views.task_unaccept, name='task_unaccept'),
     path('<int:pk>/complete/', views.task_complete, name='task_complete'),
     path('api/update-location/', views.update_location, name='update_location'),
     path('api/geojson/', views.tasks_geojson, name='tasks_geojson'),

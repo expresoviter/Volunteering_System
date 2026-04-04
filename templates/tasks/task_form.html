@@ -1,48 +1,199 @@
 {% extends "base.html" %}
 {% block title %}{{ action }} Task — VolunteerCoord{% endblock %}
+
+{% block extra_head %}
+<style>
+#location-map { height: 220px; border-radius: 8px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
         <div class="card shadow-sm">
             <div class="card-body p-4">
                 <h3 class="mb-4">{{ action }} Task</h3>
-                <form method="post">
+                <form method="post" id="task-form">
                     {% csrf_token %}
+                    <input type="hidden" name="_coord_lat" id="coord_lat"
+                           value="{% if task and task.latitude %}{{ task.latitude }}{% endif %}">
+                    <input type="hidden" name="_coord_lon" id="coord_lon"
+                           value="{% if task and task.longitude %}{{ task.longitude }}{% endif %}">
+
                     {% for field in form %}
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">{{ field.label }}</label>
-                            {% if field.field.widget.input_type == 'select' %}
-                                <select name="{{ field.html_name }}" class="form-select {% if field.errors %}is-invalid{% endif %}">
-                                    {% for value, label in field.field.choices %}
-                                        <option value="{{ value }}" {% if field.value|stringformat:"s" == value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                            {% elif field.field.widget.input_type == 'textarea' %}
-                                <textarea name="{{ field.html_name }}"
-                                          class="form-control {% if field.errors %}is-invalid{% endif %}"
-                                          rows="4">{{ field.value|default:'' }}</textarea>
-                            {% else %}
-                                <input type="{{ field.field.widget.input_type }}"
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">{{ field.label }}</label>
+
+                        {% if field.html_name == 'address' %}
+                            <div class="input-group">
+                                <input type="text"
                                        name="{{ field.html_name }}"
+                                       id="id_address"
                                        class="form-control {% if field.errors %}is-invalid{% endif %}"
-                                       value="{{ field.value|default:'' }}">
-                            {% endif %}
+                                       value="{{ field.value|default:'' }}"
+                                       autocomplete="off">
+                                <button type="button" class="btn btn-outline-secondary" id="btn-use-location"
+                                        title="Fill address from your current GPS position">
+                                    <span id="loc-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                                    <i class="bi bi-crosshair" id="loc-icon"></i> Use my location
+                                </button>
+                            </div>
                             {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
                             {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
-                        </div>
+
+                            <div id="location-map-wrap" class="mt-2"
+                                 style="{% if not task or not task.latitude %}display:none;{% endif %}">
+                                <div id="location-map"></div>
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    Drag the marker to fine-tune the location.
+                                </div>
+                            </div>
+
+                        {% elif field.field.widget.input_type == 'select' %}
+                            <select name="{{ field.html_name }}"
+                                    class="form-select {% if field.errors %}is-invalid{% endif %}">
+                                {% for value, label in field.field.choices %}
+                                    <option value="{{ value }}"
+                                        {% if field.value|stringformat:"s" == value|stringformat:"s" %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+
+                        {% elif field.field.widget.input_type == 'textarea' %}
+                            <textarea name="{{ field.html_name }}"
+                                      class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                      rows="4">{{ field.value|default:'' }}</textarea>
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+
+                        {% else %}
+                            <input type="{{ field.field.widget.input_type }}"
+                                   name="{{ field.html_name }}"
+                                   class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                   value="{{ field.value|default:'' }}">
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                        {% endif %}
+                    </div>
                     {% endfor %}
+
                     <div class="alert alert-info small">
                         <i class="bi bi-info-circle"></i>
-                        The address will be automatically geocoded using <strong>Nominatim/OpenStreetMap</strong>.
-                        Use a full address (e.g. "вул. Хрещатик, 22, Київ, Україна") for best results.
+                        The address is geocoded via <strong>Nominatim/OpenStreetMap</strong>.
+                        Use the <em>Use my location</em> button to set coordinates directly from your device.
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">{{ action }} Task</button>
-                        <a href="/tasks/" class="btn btn-outline-secondary">Cancel</a>
+                        <a href="{% if task %}/tasks/{{ task.id }}/{% else %}/tasks/{% endif %}"
+                           class="btn btn-outline-secondary">Cancel</a>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const coordLatInput = document.getElementById('coord_lat');
+const coordLonInput = document.getElementById('coord_lon');
+const addressInput  = document.getElementById('id_address');
+const mapWrap       = document.getElementById('location-map-wrap');
+const locBtn        = document.getElementById('btn-use-location');
+const locIcon       = document.getElementById('loc-icon');
+const locSpinner    = document.getElementById('loc-spinner');
+
+let leafletMap = null;
+let marker     = null;
+
+function initMap(lat, lon) {
+    mapWrap.style.display = 'block';
+    if (!leafletMap) {
+        leafletMap = L.map('location-map').setView([lat, lon], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19,
+        }).addTo(leafletMap);
+    } else {
+        leafletMap.setView([lat, lon], 16);
+    }
+
+    if (marker) {
+        marker.setLatLng([lat, lon]);
+    } else {
+        marker = L.marker([lat, lon], { draggable: true }).addTo(leafletMap);
+        marker.on('dragend', () => {
+            const pos = marker.getLatLng();
+            coordLatInput.value = pos.lat.toFixed(7);
+            coordLonInput.value = pos.lng.toFixed(7);
+            reverseGeocode(pos.lat, pos.lng);
+        });
+    }
+}
+
+function reverseGeocode(lat, lon) {
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+        headers: { 'Accept-Language': 'en' },
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data && data.display_name) {
+            addressInput.value = data.display_name;
+        }
+    })
+    .catch(() => {});  // silently ignore — address field stays as-is
+}
+
+function setSpinning(on) {
+    locSpinner.classList.toggle('d-none', !on);
+    locIcon.classList.toggle('d-none', on);
+    locBtn.disabled = on;
+}
+
+locBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser.');
+        return;
+    }
+    setSpinning(true);
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            coordLatInput.value = lat.toFixed(7);
+            coordLonInput.value = lon.toFixed(7);
+            initMap(lat, lon);
+            reverseGeocode(lat, lon);
+            setSpinning(false);
+        },
+        err => {
+            setSpinning(false);
+            alert('Could not retrieve your location: ' + err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+});
+
+// If the coordinator manually edits the address, clear stored coords so
+// the server falls back to geocoding the typed address.
+addressInput.addEventListener('input', () => {
+    coordLatInput.value = '';
+    coordLonInput.value = '';
+});
+
+// On edit: if task already has coords, show the map immediately.
+(function () {
+    const lat = parseFloat(coordLatInput.value);
+    const lon = parseFloat(coordLonInput.value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+        // Defer until Leaflet CSS is ready
+        setTimeout(() => initMap(lat, lon), 50);
+    }
+})();
+</script>
 {% endblock %}

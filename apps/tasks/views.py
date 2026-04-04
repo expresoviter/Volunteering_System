@@ -1,19 +1,42 @@
 import json
 import logging
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count, F, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+from geopy.distance import geodesic
 
 from .forms import TaskForm
 from .models import Task
 from .services.geocoding import geocode_address
 from .services.matching import get_recommended_tasks_for_volunteer, VolunteerInput
+from apps.accounts.models import Organization
 from apps.volunteers.models import VolunteerProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _build_org_filter(selected_orgs, user):
+    """Return a Q object for the selected org filter values, or None if no filter."""
+    if not selected_orgs:
+        return None
+    q = Q()
+    has_condition = False
+    if 'mine' in selected_orgs and user.is_coordinator():
+        q |= Q(created_by=user)
+        has_condition = True
+    if 'independent' in selected_orgs:
+        q |= Q(created_by__isnull=True) | Q(created_by__organization__isnull=True)
+        has_condition = True
+    for val in selected_orgs:
+        if val.isdigit():
+            q |= Q(created_by__organization_id=int(val))
+            has_condition = True
+    return q if has_condition else None
 
 
 @login_required
@@ -21,24 +44,57 @@ def task_list(request):
     """
     Main task list / map view.
     For volunteers: shows nearby tasks with Hungarian-algorithm recommendations.
-    For coordinators: shows all tasks.
+    For coordinators: shows all tasks (filtered by org by default).
     """
     user = request.user
     volunteer_lat = request.session.get('volunteer_lat')
     volunteer_lon = request.session.get('volunteer_lon')
 
+    verified_orgs = Organization.objects.filter(is_verified=True)
+
+    # Determine selected org filters.
+    # 'filter_applied' sentinel distinguishes a submitted form from a first load.
+    filter_applied = 'filter_applied' in request.GET
+    if filter_applied:
+        selected_orgs = request.GET.getlist('org')
+    else:
+        # Apply role-based defaults on first load
+        if user.is_coordinator():
+            if user.organization and user.organization.is_verified:
+                selected_orgs = [str(user.organization_id)]
+            else:
+                selected_orgs = ['mine']
+        else:
+            selected_orgs = []  # volunteers/admins: show all
+
+    org_q = _build_org_filter(selected_orgs, user)
+
+    prefetch = ['assigned_volunteers', 'created_by__organization']
+
     if user.is_coordinator():
-        tasks = Task.objects.filter(is_archived=False).prefetch_related('assigned_volunteers', 'created_by')
+        base_qs = Task.objects.filter(is_archived=False)
+        if org_q is not None:
+            base_qs = base_qs.filter(org_q)
+        tasks = base_qs.prefetch_related(*prefetch)
         recommended_ids = set()
     else:
         # Volunteer view: filter by radius if location is known
         if volunteer_lat and volunteer_lon:
-            from django.conf import settings
-            from geopy.distance import geodesic
-            radius_km = settings.TASK_RADIUS_KM
-            open_tasks = Task.objects.filter(status=Task.Status.OPEN, is_archived=False)
+            try:
+                radius_km = max(1.0, min(100.0, float(request.GET.get('radius', settings.TASK_RADIUS_KM))))
+            except (ValueError, TypeError):
+                radius_km = settings.TASK_RADIUS_KM
+            open_tasks_qs = Task.objects.annotate(
+                accepted_count=Count('assigned_volunteers')
+            ).filter(
+                status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
+                is_archived=False,
+                accepted_count__lt=F('volunteers_needed'),
+            )
+            if org_q is not None:
+                open_tasks_qs = open_tasks_qs.filter(org_q)
             nearby_tasks = []
-            for task in open_tasks:
+            for task in open_tasks_qs:
                 if task.has_coordinates:
                     distance = geodesic(
                         (volunteer_lat, volunteer_lon),
@@ -48,7 +104,7 @@ def task_list(request):
                         nearby_tasks.append(task)
             tasks = Task.objects.filter(
                 id__in=[t.id for t in nearby_tasks]
-            ).prefetch_related('assigned_volunteers', 'created_by')
+            ).prefetch_related(*prefetch)
 
             recommended_ids = get_recommended_tasks_for_volunteer(
                 volunteer_id=user.id,
@@ -57,10 +113,21 @@ def task_list(request):
                 open_tasks=nearby_tasks,
             )
         else:
-            tasks = Task.objects.filter(
-                status=Task.Status.OPEN, is_archived=False
-            ).prefetch_related('assigned_volunteers', 'created_by')
+            radius_km = float(settings.TASK_RADIUS_KM)
+            base_qs = Task.objects.annotate(
+                accepted_count=Count('assigned_volunteers')
+            ).filter(
+                status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
+                is_archived=False,
+                accepted_count__lt=F('volunteers_needed'),
+            )
+            if org_q is not None:
+                base_qs = base_qs.filter(org_q)
+            tasks = base_qs.prefetch_related(*prefetch)
             recommended_ids = set()
+
+    if user.is_coordinator():
+        radius_km = float(settings.TASK_RADIUS_KM)
 
     # Build GeoJSON for map markers
     features = []
@@ -88,6 +155,9 @@ def task_list(request):
         'geojson': geojson,
         'volunteer_lat': volunteer_lat,
         'volunteer_lon': volunteer_lon,
+        'verified_orgs': verified_orgs,
+        'selected_orgs': selected_orgs,
+        'radius_km': radius_km,
     }
     return render(request, 'tasks/task_list.html', context)
 
@@ -97,10 +167,12 @@ def task_detail(request, pk):
     task = get_object_or_404(Task, pk=pk)
     assigned_volunteers = task.assigned_volunteers.all()
     user_already_accepted = request.user in assigned_volunteers
+    can_manage = request.user.can_manage_task(task)
     return render(request, 'tasks/task_detail.html', {
         'task': task,
         'assigned_volunteers': assigned_volunteers,
         'user_already_accepted': user_already_accepted,
+        'can_manage': can_manage,
     })
 
 
@@ -118,9 +190,11 @@ def task_create(request):
         if form.is_valid():
             task = form.save(commit=False)
             task.created_by = request.user
-            lat, lon = geocode_address(task.address)
-            task.latitude = lat
-            task.longitude = lon
+            try:
+                task.latitude  = float(request.POST['_coord_lat'])
+                task.longitude = float(request.POST['_coord_lon'])
+            except (KeyError, ValueError):
+                task.latitude, task.longitude = geocode_address(task.address)
             task.save()
             if lat is None:
                 messages.warning(
@@ -146,14 +220,19 @@ def task_edit(request, pk):
     if not request.user.can_work():
         messages.warning(request, "Your account is pending verification.")
         return redirect('accounts:pending_verification')
+    if not request.user.can_manage_task(task):
+        messages.error(request, "You can only edit tasks created by you or your organisation.")
+        return redirect('tasks:task_detail', pk=pk)
 
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             task = form.save(commit=False)
-            lat, lon = geocode_address(task.address)
-            task.latitude = lat
-            task.longitude = lon
+            try:
+                task.latitude  = float(request.POST['_coord_lat'])
+                task.longitude = float(request.POST['_coord_lon'])
+            except (KeyError, ValueError):
+                task.latitude, task.longitude = geocode_address(task.address)
             task.save()
             messages.success(request, "Task updated.")
             return redirect('tasks:task_detail', pk=task.pk)
@@ -173,6 +252,9 @@ def task_delete(request, pk):
     if not request.user.can_work():
         messages.warning(request, "Your account is pending verification.")
         return redirect('accounts:pending_verification')
+    if not request.user.can_manage_task(task):
+        messages.error(request, "You can only delete tasks created by you or your organisation.")
+        return redirect('tasks:task_detail', pk=pk)
     if task.assigned_volunteers.exists() or task.status == Task.Status.COMPLETED:
         task.is_archived = True
         task.save(update_fields=['is_archived'])
@@ -185,23 +267,54 @@ def task_delete(request, pk):
 
 @login_required
 def task_archive_list(request):
-    if not request.user.is_coordinator():
+    user = request.user
+    if not user.is_coordinator() and not user.is_superuser:
         messages.error(request, "Only coordinators can view the archive.")
         return redirect('tasks:task_list')
-    if not request.user.can_work():
+    if not user.is_superuser and not user.can_work():
         messages.warning(request, "Your account is pending verification.")
         return redirect('accounts:pending_verification')
-    archived_tasks = Task.objects.filter(is_archived=True).prefetch_related('assigned_volunteers', 'created_by')
-    return render(request, 'tasks/task_archive.html', {'archived_tasks': archived_tasks})
+
+    verified_orgs = Organization.objects.filter(is_verified=True)
+
+    if user.is_superuser:
+        # Admins: full archive with optional org filter
+        filter_applied = 'filter_applied' in request.GET
+        selected_orgs = request.GET.getlist('org') if filter_applied else []
+        org_q = _build_org_filter(selected_orgs, user)
+        base_qs = Task.objects.filter(is_archived=True)
+        if org_q is not None:
+            base_qs = base_qs.filter(org_q)
+    else:
+        # Coordinators: scoped to their own tasks or their org's tasks — no filter UI needed
+        selected_orgs = []
+        if user.organization and user.organization.is_verified:
+            base_qs = Task.objects.filter(
+                is_archived=True,
+                created_by__organization=user.organization,
+            )
+        else:
+            base_qs = Task.objects.filter(is_archived=True, created_by=user)
+
+    archived_tasks = base_qs.prefetch_related('assigned_volunteers', 'created_by__organization')
+    return render(request, 'tasks/task_archive.html', {
+        'archived_tasks': archived_tasks,
+        'verified_orgs': verified_orgs if user.is_superuser else [],
+        'selected_orgs': selected_orgs,
+        'show_filter': user.is_superuser,
+    })
 
 
 @login_required
 @require_POST
 def task_accept(request, pk):
     """Volunteer accepts an open task — added to assigned_volunteers."""
-    task = get_object_or_404(Task, pk=pk, status=Task.Status.OPEN)
+    task = get_object_or_404(Task, pk=pk)
     if not request.user.is_volunteer():
         messages.error(request, "Only volunteers can accept tasks.")
+        return redirect('tasks:task_detail', pk=pk)
+    if task.status == Task.Status.COMPLETED or task.is_archived:
+        messages.error(request, "This task is no longer accepting volunteers.")
         return redirect('tasks:task_detail', pk=pk)
     if request.user in task.assigned_volunteers.all():
         messages.warning(request, "You have already accepted this task.")
@@ -211,11 +324,34 @@ def task_accept(request, pk):
         return redirect('tasks:task_detail', pk=pk)
 
     task.assigned_volunteers.add(request.user)
-    if task.assigned_volunteers.count() >= task.volunteers_needed:
-        task.status = Task.Status.IN_PROGRESS
-        task.save(update_fields=['status', 'updated_at'])
+    task.status = Task.Status.IN_PROGRESS
+    task.save(update_fields=['status', 'updated_at'])
 
     messages.success(request, f"You accepted task '{task.title}'.")
+    return redirect('tasks:task_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def task_unaccept(request, pk):
+    """Volunteer withdraws their acceptance of a task."""
+    task = get_object_or_404(Task, pk=pk)
+    if not request.user.is_volunteer():
+        messages.error(request, "Only volunteers can withdraw from tasks.")
+        return redirect('tasks:task_detail', pk=pk)
+    if request.user not in task.assigned_volunteers.all():
+        messages.warning(request, "You have not accepted this task.")
+        return redirect('tasks:task_detail', pk=pk)
+    if task.status == Task.Status.COMPLETED:
+        messages.error(request, "Cannot withdraw from a completed task.")
+        return redirect('tasks:task_detail', pk=pk)
+
+    task.assigned_volunteers.remove(request.user)
+    if task.assigned_volunteers.count() == 0:
+        task.status = Task.Status.OPEN
+        task.save(update_fields=['status', 'updated_at'])
+
+    messages.success(request, f"You have withdrawn from task '{task.title}'.")
     return redirect('tasks:task_detail', pk=pk)
 
 
@@ -231,6 +367,9 @@ def task_complete(request, pk):
     if not user.can_work():
         messages.warning(request, "Your account is pending verification.")
         return redirect('accounts:pending_verification')
+    if not user.can_manage_task(task):
+        messages.error(request, "You can only complete tasks created by you or your organisation.")
+        return redirect('tasks:task_detail', pk=pk)
     if task.status == Task.Status.COMPLETED:
         messages.warning(request, "Task is already completed.")
         return redirect('tasks:task_detail', pk=pk)

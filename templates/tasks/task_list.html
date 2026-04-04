@@ -28,15 +28,80 @@
     </div>
 </div>
 
-{% if user.role == 'volunteer' and not volunteer_lat %}
+{% if not volunteer_lat %}
 <div class="alert alert-info">
     <i class="bi bi-geo-alt"></i>
-    <strong>Share your location</strong> to see nearby tasks and get personalised recommendations.
+    <strong>Share your location</strong> to centre the map on your area{% if user.role == 'volunteer' %} and get personalised recommendations{% endif %}.
     <button class="btn btn-sm btn-outline-primary ms-2" onclick="requestLocation()">
         <i class="bi bi-crosshair"></i> Share Location
     </button>
 </div>
 {% endif %}
+
+<!-- Organisation Filter -->
+<div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold"><i class="bi bi-funnel"></i> Filter by Organisation</span>
+        <button class="btn btn-link btn-sm p-0 text-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#orgFilterBody">
+            <i class="bi bi-chevron-down"></i>
+        </button>
+    </div>
+    <div class="collapse show" id="orgFilterBody">
+        <div class="card-body py-2">
+            <form method="get" action="">
+                <input type="hidden" name="filter_applied" value="1">
+                <div class="d-flex flex-wrap gap-3 align-items-center">
+                    {% if user.role == 'volunteer' and volunteer_lat %}
+                    <div class="d-flex align-items-center gap-2" style="min-width:220px;">
+                        <i class="bi bi-broadcast-pin text-primary"></i>
+                        <label class="form-label mb-0 text-nowrap" for="radius-slider">Radius:</label>
+                        <input type="range" class="form-range" id="radius-slider" name="radius"
+                               min="1" max="100" step="1" value="{{ radius_km|floatformat:0 }}"
+                               oninput="document.getElementById('radius-val').textContent = this.value">
+                        <span class="text-nowrap fw-semibold" style="min-width:52px;">
+                            <span id="radius-val">{{ radius_km|floatformat:0 }}</span> km
+                        </span>
+                    </div>
+                    <div class="vr"></div>
+                    {% endif %}
+                    {% if user.role == 'coordinator' %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="org" value="mine"
+                               id="filter-mine"
+                               {% if 'mine' in selected_orgs %}checked{% endif %}>
+                        <label class="form-check-label" for="filter-mine">
+                            <i class="bi bi-person-circle"></i> My Tasks
+                        </label>
+                    </div>
+                    {% endif %}
+                    {% for org in verified_orgs %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="org" value="{{ org.id }}"
+                               id="filter-org-{{ org.id }}"
+                               {% if org.id|stringformat:"s" in selected_orgs %}checked{% endif %}>
+                        <label class="form-check-label" for="filter-org-{{ org.id }}">
+                            <i class="bi bi-building"></i> {{ org.name }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="org" value="independent"
+                               id="filter-independent"
+                               {% if 'independent' in selected_orgs %}checked{% endif %}>
+                        <label class="form-check-label" for="filter-independent">
+                            <i class="bi bi-person"></i> Independent Tasks
+                        </label>
+                    </div>
+                    <div class="ms-auto d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                        <a href="/tasks/" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Task Cards -->
 <div class="row g-3">
@@ -57,6 +122,9 @@
                 </div>
                 <p class="card-text text-muted small">{{ task.description|truncatechars:100 }}</p>
                 <p class="small text-muted"><i class="bi bi-geo-alt"></i> {{ task.address|truncatechars:60 }}</p>
+                {% if task.created_by.organization and task.created_by.organization.is_verified %}
+                <p class="small text-muted mb-1"><i class="bi bi-building"></i> {{ task.created_by.organization.name }}</p>
+                {% endif %}
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="d-flex gap-1 align-items-center">
                         <span class="badge
@@ -165,8 +233,16 @@ function requestLocation() {
     });
 }
 
-// Auto-request location for volunteers
-if (USER_ROLE === 'volunteer' && !VOL_LAT) {
+// Radius slider — auto-submit on release
+const radiusSlider = document.getElementById('radius-slider');
+if (radiusSlider) {
+    radiusSlider.addEventListener('change', () => {
+        radiusSlider.closest('form').submit();
+    });
+}
+
+// Auto-request location for all users without a stored position
+if (!VOL_LAT) {
     setTimeout(requestLocation, 1000);
 }
 </script>
