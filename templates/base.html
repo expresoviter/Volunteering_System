@@ -33,13 +33,13 @@
                 <li class="nav-item"><a class="nav-link" href="/tasks/"><i class="bi bi-list-task"></i> Tasks</a></li>
                 {% if user.is_authenticated %}
                     {% if user.role == 'coordinator' %}
+                        <li class="nav-item"><a class="nav-link" href="/accounts/coordinator/profile/"><i class="bi bi-person"></i> My Profile</a></li>
                         {% if user.is_verified %}
                             <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> New Task</a></li>
                             {% if user.organization and user.organization.is_verified %}
                                 <li class="nav-item"><a class="nav-link" href="/accounts/verify-coordinators/"><i class="bi bi-person-check"></i> Verify Members</a></li>
                             {% endif %}
                         {% endif %}
-                        <li class="nav-item"><a class="nav-link" href="/admin/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
                     {% else %}
                         <li class="nav-item"><a class="nav-link" href="/volunteers/profile/"><i class="bi bi-person"></i> My Profile</a></li>
                     {% endif %}

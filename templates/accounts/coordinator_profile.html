@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}My Profile — VolunteerCoord{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-person-badge"></i> Coordinator Profile</h2>
+
+<div class="row g-4">
+
+    <!-- Personal stats -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-person"></i> My Tasks</div>
+            <div class="card-body">
+                <div class="row text-center g-3">
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold">{{ personal_stats.total }}</div>
+                        <small class="text-muted">Total Created</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-danger">{{ personal_stats.open }}</div>
+                        <small class="text-muted">Open</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-warning">{{ personal_stats.in_progress }}</div>
+                        <small class="text-muted">In Progress</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-success">{{ personal_stats.completed }}</div>
+                        <small class="text-muted">Completed</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-secondary">{{ personal_stats.archived }}</div>
+                        <small class="text-muted">Archived</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Org stats -->
+    {% if org_stats %}
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">
+                <i class="bi bi-building"></i> {{ user.organization.name }}
+                {% if user.organization.is_verified %}
+                    <i class="bi bi-patch-check-fill text-success ms-1" title="Verified"></i>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row text-center g-3">
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold">{{ org_stats.total }}</div>
+                        <small class="text-muted">Total Created</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-danger">{{ org_stats.open }}</div>
+                        <small class="text-muted">Open</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-warning">{{ org_stats.in_progress }}</div>
+                        <small class="text-muted">In Progress</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-success">{{ org_stats.completed }}</div>
+                        <small class="text-muted">Completed</small>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="fs-2 fw-bold text-secondary">{{ org_stats.archived }}</div>
+                        <small class="text-muted">Archived</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Organisation management -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header fw-semibold"><i class="bi bi-building-gear"></i> Organisation</div>
+            <div class="card-body">
+
+                {% if user.organization %}
+                <!-- Currently in an org — show leave option -->
+                <p class="mb-1">
+                    You are a member of <strong>{{ user.organization.name }}</strong>
+                    {% if user.organization.is_verified %}
+                        <span class="badge bg-success ms-1">Verified</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark ms-1">Pending verification</span>
+                    {% endif %}
+                </p>
+                <p class="text-muted small mb-3">Leaving will remove you from the organisation and require re-verification.</p>
+                <form method="post" action="/accounts/coordinator/org/leave/"
+                      onsubmit="return confirm('Leave {{ user.organization.name }}? Your account will be set to pending verification.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-left"></i> Leave Organisation
+                    </button>
+                </form>
+
+                {% else %}
+                <!-- No org — create or join -->
+                <div class="row g-4">
+
+                    <div class="col-md-6">
+                        <h6 class="fw-semibold">Create a new organisation</h6>
+                        <form method="post" action="/accounts/coordinator/org/create/">
+                            {% csrf_token %}
+                            <div class="input-group">
+                                <input type="text" name="name" class="form-control"
+                                       placeholder="Organisation name" required maxlength="255">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-plus-circle"></i> Create
+                                </button>
+                            </div>
+                            <div class="form-text">The organisation will be visible once an admin verifies it.</div>
+                        </form>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6 class="fw-semibold">Join an existing organisation</h6>
+                        {% if other_orgs %}
+                        <form method="post" action="/accounts/coordinator/org/join/">
+                            {% csrf_token %}
+                            <div class="input-group">
+                                <select name="org_id" class="form-select" required>
+                                    <option value="">— Select organisation —</option>
+                                    {% for org in other_orgs %}
+                                    <option value="{{ org.pk }}">
+                                        {{ org.name }}{% if org.is_verified %} (verified){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-outline-primary">
+                                    <i class="bi bi-door-open"></i> Join
+                                </button>
+                            </div>
+                            <div class="form-text">Joining a verified organisation grants immediate access.</div>
+                        </form>
+                        {% else %}
+                        <p class="text-muted small">No organisations exist yet.</p>
+                        {% endif %}
+                    </div>
+
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

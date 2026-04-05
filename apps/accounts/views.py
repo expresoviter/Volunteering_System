@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView
 
+from apps.tasks.models import Task
 from .forms import ORG_NEW, RegistrationForm
 from .models import Organization, User
 
@@ -129,6 +130,108 @@ def delete_account(request):
         messages.success(request, "Your account has been permanently deleted.")
         return redirect('accounts:login')
     return render(request, 'accounts/delete_account.html')
+
+
+@login_required
+def coordinator_profile(request):
+    user = request.user
+    if not user.is_coordinator():
+        return redirect('tasks:task_list')
+
+    user_tasks = Task.objects.filter(created_by=user)
+    personal_stats = {
+        'total':       user_tasks.count(),
+        'open':        user_tasks.filter(status=Task.Status.OPEN, is_archived=False).count(),
+        'in_progress': user_tasks.filter(status=Task.Status.IN_PROGRESS, is_archived=False).count(),
+        'completed':   user_tasks.filter(status=Task.Status.COMPLETED).count(),
+        'archived':    user_tasks.filter(is_archived=True).count(),
+    }
+
+    org_stats = None
+    if user.organization:
+        org_tasks = Task.objects.filter(created_by__organization=user.organization)
+        org_stats = {
+            'total':       org_tasks.count(),
+            'open':        org_tasks.filter(status=Task.Status.OPEN, is_archived=False).count(),
+            'in_progress': org_tasks.filter(status=Task.Status.IN_PROGRESS, is_archived=False).count(),
+            'completed':   org_tasks.filter(status=Task.Status.COMPLETED).count(),
+            'archived':    org_tasks.filter(is_archived=True).count(),
+        }
+
+    other_orgs = Organization.objects.exclude(pk=user.organization_id) if user.organization else Organization.objects.all()
+
+    return render(request, 'accounts/coordinator_profile.html', {
+        'personal_stats': personal_stats,
+        'org_stats':      org_stats,
+        'other_orgs':     other_orgs,
+    })
+
+
+@login_required
+@require_POST
+def coordinator_org_create(request):
+    user = request.user
+    if not user.is_coordinator():
+        return redirect('tasks:task_list')
+    if user.organization:
+        messages.error(request, "You are already in an organisation. Leave it first.")
+        return redirect('accounts:coordinator_profile')
+
+    name = request.POST.get('name', '').strip()
+    if not name:
+        messages.error(request, "Organisation name cannot be empty.")
+        return redirect('accounts:coordinator_profile')
+    if Organization.objects.filter(name__iexact=name).exists():
+        messages.error(request, "An organisation with that name already exists.")
+        return redirect('accounts:coordinator_profile')
+
+    org = Organization.objects.create(name=name, created_by=user)
+    user.organization = org
+    user.save(update_fields=['organization'])
+    messages.success(request, f"Organisation '{org.name}' created. It will appear as verified once an admin approves it.")
+    return redirect('accounts:coordinator_profile')
+
+
+@login_required
+@require_POST
+def coordinator_org_join(request):
+    user = request.user
+    if not user.is_coordinator():
+        return redirect('tasks:task_list')
+    if user.organization:
+        messages.error(request, "You are already in an organisation. Leave it first.")
+        return redirect('accounts:coordinator_profile')
+
+    org_id = request.POST.get('org_id', '').strip()
+    try:
+        org = Organization.objects.get(pk=int(org_id))
+    except (Organization.DoesNotExist, ValueError):
+        messages.error(request, "Organisation not found.")
+        return redirect('accounts:coordinator_profile')
+
+    user.organization = org
+    user.is_verified = False
+    user.save(update_fields=['organization', 'is_verified'])
+    messages.success(request, f"You have joined '{org.name}' and are pending verification by an existing member.")
+    return redirect('accounts:pending_verification')
+
+
+@login_required
+@require_POST
+def coordinator_org_leave(request):
+    user = request.user
+    if not user.is_coordinator():
+        return redirect('tasks:task_list')
+    if not user.organization:
+        messages.error(request, "You are not in any organisation.")
+        return redirect('accounts:coordinator_profile')
+
+    org_name = user.organization.name
+    user.organization = None
+    user.is_verified = False
+    user.save(update_fields=['organization', 'is_verified'])
+    messages.success(request, f"You have left '{org_name}'. Your account will need re-verification.")
+    return redirect('accounts:coordinator_profile')
 
 
 @login_required
