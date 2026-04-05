@@ -5,6 +5,7 @@ from apps.tasks.models import Task
 from .models import Skill, VolunteerProfile
 
 
+
 @login_required
 def profile(request):
     if not request.user.is_volunteer():
