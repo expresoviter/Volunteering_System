@@ -84,3 +84,4 @@ NOMINATIM_USER_AGENT = config('NOMINATIM_USER_AGENT', default='volunteer_coordin
 TASK_RADIUS_KM = config('TASK_RADIUS_KM', default=10.0, cast=float)
 MATCHING_WEIGHT_DISTANCE = config('MATCHING_WEIGHT_DISTANCE', default=1.0, cast=float)
 MATCHING_WEIGHT_PRIORITY = config('MATCHING_WEIGHT_PRIORITY', default=2.0, cast=float)
+MATCHING_WEIGHT_SKILLS   = config('MATCHING_WEIGHT_SKILLS',   default=1.5, cast=float)

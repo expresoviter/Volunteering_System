@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Edit Skills — VolunteerCoord{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="mb-1"><i class="bi bi-tools"></i> My Skills</h3>
+                <p class="text-muted mb-4">Select the skills you have. The recommendation algorithm uses these to match you with suitable tasks.</p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    {% for category, skills in skills_by_category.items %}
+                    <div class="mb-4">
+                        <div class="text-uppercase fw-semibold small text-muted mb-2">{{ category }}</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for skill in skills %}
+                            <div class="form-check form-check-inline m-0">
+                                <input class="form-check-input skill-cb" type="checkbox"
+                                       name="skills" value="{{ skill.id }}"
+                                       id="skill-{{ skill.id }}"
+                                       {% if skill.id|stringformat:"s" in selected_skill_ids %}checked{% endif %}>
+                                <label class="form-check-label badge border px-2 py-1
+                                       {% if skill.id|stringformat:'s' in selected_skill_ids %}bg-primary text-white{% else %}bg-light text-dark{% endif %}"
+                                       for="skill-{{ skill.id }}" style="cursor:pointer; font-size:0.85rem;">
+                                    {{ skill.name }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="submit" class="btn btn-primary">Save Skills</button>
+                        <a href="/volunteers/profile/" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.querySelectorAll('.skill-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+        const label = document.querySelector(`label[for="${cb.id}"]`);
+        if (cb.checked) {
+            label.classList.replace('bg-light', 'bg-primary');
+            label.classList.replace('text-dark', 'text-white');
+        } else {
+            label.classList.replace('bg-primary', 'bg-light');
+            label.classList.replace('text-white', 'text-dark');
+        }
+    });
+});
+</script>
+{% endblock %}

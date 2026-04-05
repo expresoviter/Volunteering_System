@@ -81,6 +81,39 @@
                     </div>
                     {% endfor %}
 
+                    <!-- Required Skills -->
+                    {% if skills_by_category %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            Required Skills <span class="text-muted fw-normal">(optional)</span>
+                        </label>
+                        <p class="text-muted small mb-2">
+                            Select skills volunteers should ideally have. The recommendation algorithm
+                            will prioritise volunteers whose skills match.
+                        </p>
+                        {% for category, skills in skills_by_category.items %}
+                        <div class="mb-2">
+                            <div class="text-uppercase fw-semibold small text-muted mb-1">{{ category }}</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for skill in skills %}
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input skill-cb" type="checkbox"
+                                           name="required_skills" value="{{ skill.id }}"
+                                           id="rskill-{{ skill.id }}"
+                                           {% if skill.id|stringformat:"s" in selected_skill_ids %}checked{% endif %}>
+                                    <label class="form-check-label badge border px-2 py-1
+                                           {% if skill.id|stringformat:'s' in selected_skill_ids %}bg-primary text-white{% else %}bg-light text-dark{% endif %}"
+                                           for="rskill-{{ skill.id }}" style="cursor:pointer; font-size:0.85rem;">
+                                        {{ skill.name }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
                     <div class="alert alert-info small">
                         <i class="bi bi-info-circle"></i>
                         The address is geocoded via <strong>Nominatim/OpenStreetMap</strong>.
@@ -100,6 +133,19 @@
 
 {% block extra_scripts %}
 <script>
+document.querySelectorAll('.skill-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+        const label = document.querySelector(`label[for="${cb.id}"]`);
+        if (cb.checked) {
+            label.classList.replace('bg-light', 'bg-primary');
+            label.classList.replace('text-dark', 'text-white');
+        } else {
+            label.classList.replace('bg-primary', 'bg-light');
+            label.classList.replace('text-white', 'text-dark');
+        }
+    });
+});
+
 const coordLatInput = document.getElementById('coord_lat');
 const coordLonInput = document.getElementById('coord_lon');
 const addressInput  = document.getElementById('id_address');

@@ -5,12 +5,16 @@ Uses the Hungarian algorithm (scipy.optimize.linear_sum_assignment) to compute
 the globally optimal assignment of volunteers to tasks, minimizing total cost.
 
 Cost function:
-    C(i, j) = (w1 * distance_km(volunteer_i, task_j)) - (w2 * priority(task_j))
+    C(i, j) = (w1 * distance_km(volunteer_i, task_j))
+             - (w2 * priority(task_j))
+             - (w3 * skill_match(volunteer_i, task_j))
 
 Where:
-    - w1 = MATCHING_WEIGHT_DISTANCE (penalizes distance)
-    - w2 = MATCHING_WEIGHT_PRIORITY (rewards higher-priority tasks)
-    - priority ∈ {1, 2, 3} (Low, Medium, High)
+    - w1 = MATCHING_WEIGHT_DISTANCE  (penalizes distance)
+    - w2 = MATCHING_WEIGHT_PRIORITY  (rewards higher-priority tasks)
+    - w3 = MATCHING_WEIGHT_SKILLS    (rewards skill overlap)
+    - priority ∈ {1, 2, 3}           (Low, Medium, High)
+    - skill_match = number of skills the volunteer has that the task requires
 
 THESIS-NOTE: This is a "soft" assignment — the result is used to tag tasks as
 "Recommended" in the UI rather than forcibly assigning them, preserving volunteer
@@ -29,22 +33,24 @@ logger = logging.getLogger(__name__)
 
 
 class VolunteerInput(NamedTuple):
-    user_id: int
-    latitude: float
+    user_id:   int
+    latitude:  float
     longitude: float
+    skill_ids: frozenset = frozenset()
 
 
 class TaskInput(NamedTuple):
-    task_id: int
-    latitude: float
-    longitude: float
-    priority: int
+    task_id:           int
+    latitude:          float
+    longitude:         float
+    priority:          int
+    required_skill_ids: frozenset = frozenset()
 
 
 class MatchResult(NamedTuple):
     volunteer_id: int
-    task_id: int
-    cost: float
+    task_id:      int
+    cost:         float
 
 
 def compute_distance_km(vol: VolunteerInput, task: TaskInput) -> float:
@@ -57,22 +63,25 @@ def build_cost_matrix(
     tasks: list[TaskInput],
     w1: float,
     w2: float,
+    w3: float,
 ) -> np.ndarray:
     """
     Build the N×M cost matrix where:
-        C[i][j] = w1 * distance_km(volunteer_i, task_j) - w2 * priority(task_j)
+        C[i][j] = w1 * distance_km(volunteer_i, task_j)
+                - w2 * priority(task_j)
+                - w3 * skill_match(volunteer_i, task_j)
 
-    The matrix is padded with zeros if N < M so that scipy can handle the
-    rectangular case (more tasks than volunteers).
+    skill_match = number of skills in the intersection of volunteer skills and
+    task required skills. Tasks with no required skills contribute 0 here.
     """
     n = len(volunteers)
     m = len(tasks)
-    # Pad to square if needed — scipy handles rectangular matrices since 0.17
     matrix = np.zeros((n, m), dtype=float)
     for i, vol in enumerate(volunteers):
         for j, task in enumerate(tasks):
-            distance = compute_distance_km(vol, task)
-            matrix[i][j] = (w1 * distance) - (w2 * task.priority)
+            distance    = compute_distance_km(vol, task)
+            skill_match = len(vol.skill_ids & task.required_skill_ids)
+            matrix[i][j] = (w1 * distance) - (w2 * task.priority) - (w3 * skill_match)
     return matrix
 
 
@@ -90,8 +99,9 @@ def run_matching(
 
     w1 = settings.MATCHING_WEIGHT_DISTANCE
     w2 = settings.MATCHING_WEIGHT_PRIORITY
+    w3 = settings.MATCHING_WEIGHT_SKILLS
 
-    cost_matrix = build_cost_matrix(volunteers, tasks, w1, w2)
+    cost_matrix = build_cost_matrix(volunteers, tasks, w1, w2, w3)
     row_indices, col_indices = linear_sum_assignment(cost_matrix)
 
     results = []
@@ -114,8 +124,9 @@ def get_recommended_tasks_for_volunteer(
     volunteer_id: int,
     volunteer_lat: float,
     volunteer_lon: float,
-    open_tasks,  # QuerySet of Task objects with coordinates
-    all_active_volunteers=None,  # optional list of VolunteerInput for global optimisation
+    open_tasks,                              # QuerySet / list of Task objects with coordinates
+    volunteer_skill_ids: frozenset = frozenset(),
+    all_active_volunteers=None,             # optional list[VolunteerInput] for global optimisation
 ) -> set[int]:
     """
     Return a set of task IDs that the Hungarian algorithm recommends for this volunteer.
@@ -124,7 +135,13 @@ def get_recommended_tasks_for_volunteer(
     optimisation. Otherwise only the current volunteer is used (N=1 case).
     """
     tasks_with_coords = [
-        TaskInput(task_id=t.id, latitude=t.latitude, longitude=t.longitude, priority=t.priority)
+        TaskInput(
+            task_id=t.id,
+            latitude=t.latitude,
+            longitude=t.longitude,
+            priority=t.priority,
+            required_skill_ids=frozenset(t.required_skills.values_list('id', flat=True)),
+        )
         for t in open_tasks
         if t.has_coordinates
     ]
@@ -132,13 +149,14 @@ def get_recommended_tasks_for_volunteer(
     if not tasks_with_coords:
         return set()
 
+    current_vol = VolunteerInput(volunteer_id, volunteer_lat, volunteer_lon, volunteer_skill_ids)
+
     if all_active_volunteers:
         volunteers = list(all_active_volunteers)
-        # Ensure the current volunteer is included
         if not any(v.user_id == volunteer_id for v in volunteers):
-            volunteers.append(VolunteerInput(volunteer_id, volunteer_lat, volunteer_lon))
+            volunteers.append(current_vol)
     else:
-        volunteers = [VolunteerInput(volunteer_id, volunteer_lat, volunteer_lon)]
+        volunteers = [current_vol]
 
     matches = run_matching(volunteers, tasks_with_coords)
     return {m.task_id for m in matches if m.volunteer_id == volunteer_id}

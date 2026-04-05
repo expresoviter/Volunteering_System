@@ -32,6 +32,11 @@ class Task(models.Model):
         blank=True,
         related_name='accepted_tasks',
     )
+    required_skills = models.ManyToManyField(
+        'volunteers.Skill',
+        blank=True,
+        related_name='tasks',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_archived = models.BooleanField(default=False)

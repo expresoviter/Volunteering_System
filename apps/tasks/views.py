@@ -12,12 +12,31 @@ from geopy.distance import geodesic
 
 from .forms import TaskForm
 from .models import Task
-from .services.geocoding import geocode_address
+from .services.geocoding import geocode_address, geocode_address_full
+
+_ALLOWED_COUNTRY_CODES = {'ua', 'se', 'no'}
+_COUNTRY_CODE_NAMES = {'ua': 'Ukraine', 'se': 'Sweden', 'no': 'Norway'}
 from .services.matching import get_recommended_tasks_for_volunteer, VolunteerInput
 from apps.accounts.models import Organization
-from apps.volunteers.models import VolunteerProfile
+from apps.volunteers.models import Skill, VolunteerProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _skills_context(request, task):
+    """Return skills_by_category and selected_skill_ids for the task form."""
+    skills_by_category = {}
+    for skill in Skill.objects.order_by('category', 'name'):
+        skills_by_category.setdefault(skill.get_category_display(), []).append(skill)
+
+    if request.method == 'POST':
+        selected_skill_ids = set(request.POST.getlist('required_skills'))
+    elif task is not None:
+        selected_skill_ids = set(str(i) for i in task.required_skills.values_list('id', flat=True))
+    else:
+        selected_skill_ids = set()
+
+    return {'skills_by_category': skills_by_category, 'selected_skill_ids': selected_skill_ids}
 
 
 def _build_org_filter(selected_orgs, user):
@@ -69,7 +88,7 @@ def task_list(request):
 
     org_q = _build_org_filter(selected_orgs, user)
 
-    prefetch = ['assigned_volunteers', 'created_by__organization']
+    prefetch = ['assigned_volunteers', 'created_by__organization', 'required_skills']
 
     if user.is_coordinator():
         base_qs = Task.objects.filter(is_archived=False)
@@ -106,11 +125,19 @@ def task_list(request):
                 id__in=[t.id for t in nearby_tasks]
             ).prefetch_related(*prefetch)
 
+            try:
+                volunteer_skill_ids = frozenset(
+                    user.volunteer_profile.skills.values_list('id', flat=True)
+                )
+            except Exception:
+                volunteer_skill_ids = frozenset()
+
             recommended_ids = get_recommended_tasks_for_volunteer(
                 volunteer_id=user.id,
                 volunteer_lat=float(volunteer_lat),
                 volunteer_lon=float(volunteer_lon),
                 open_tasks=nearby_tasks,
+                volunteer_skill_ids=volunteer_skill_ids,
             )
         else:
             radius_km = float(settings.TASK_RADIUS_KM)
@@ -191,24 +218,45 @@ def task_create(request):
             task = form.save(commit=False)
             task.created_by = request.user
             try:
-                task.latitude  = float(request.POST['_coord_lat'])
-                task.longitude = float(request.POST['_coord_lon'])
+                lat = float(request.POST['_coord_lat'])
+                lon = float(request.POST['_coord_lon'])
+                geo = geocode_address_full(task.address)
+                task.latitude  = lat
+                task.longitude = lon
             except (KeyError, ValueError):
-                task.latitude, task.longitude = geocode_address(task.address)
-            task.save()
-            if lat is None:
-                messages.warning(
-                    request,
-                    f"Task saved but address '{task.address}' could not be geocoded. "
-                    "The task will not appear on the map until a valid address is provided."
+                geo = geocode_address_full(task.address)
+                task.latitude  = geo['lat']
+                task.longitude = geo['lon']
+
+            country_code = (geo.get('country_code') or '').lower()
+            if country_code not in _ALLOWED_COUNTRY_CODES:
+                form.add_error(
+                    'address',
+                    "Tasks can only be created in Ukraine, Sweden, or Norway. "
+                    "Please enter an address in one of those countries."
                 )
             else:
-                messages.success(request, f"Task '{task.title}' created successfully.")
-            return redirect('tasks:task_detail', pk=task.pk)
+                task.save()
+                task.required_skills.set(
+                    Skill.objects.filter(id__in=request.POST.getlist('required_skills'))
+                )
+                if task.latitude is None:
+                    messages.warning(
+                        request,
+                        f"Task saved but address '{task.address}' could not be geocoded. "
+                        "The task will not appear on the map until a valid address is provided."
+                    )
+                else:
+                    messages.success(request, f"Task '{task.title}' created successfully.")
+                return redirect('tasks:task_detail', pk=task.pk)
     else:
         form = TaskForm()
 
-    return render(request, 'tasks/task_form.html', {'form': form, 'action': 'Create'})
+    return render(request, 'tasks/task_form.html', {
+        'form': form,
+        'action': 'Create',
+        **_skills_context(request, None),
+    })
 
 
 @login_required
@@ -223,23 +271,48 @@ def task_edit(request, pk):
     if not request.user.can_manage_task(task):
         messages.error(request, "You can only edit tasks created by you or your organisation.")
         return redirect('tasks:task_detail', pk=pk)
+    if task.status != Task.Status.OPEN or task.is_archived:
+        messages.error(request, "Only open tasks can be edited.")
+        return redirect('tasks:task_detail', pk=pk)
 
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             task = form.save(commit=False)
             try:
-                task.latitude  = float(request.POST['_coord_lat'])
-                task.longitude = float(request.POST['_coord_lon'])
+                lat = float(request.POST['_coord_lat'])
+                lon = float(request.POST['_coord_lon'])
+                geo = geocode_address_full(task.address)
+                task.latitude  = lat
+                task.longitude = lon
             except (KeyError, ValueError):
-                task.latitude, task.longitude = geocode_address(task.address)
-            task.save()
-            messages.success(request, "Task updated.")
-            return redirect('tasks:task_detail', pk=task.pk)
+                geo = geocode_address_full(task.address)
+                task.latitude  = geo['lat']
+                task.longitude = geo['lon']
+
+            country_code = (geo.get('country_code') or '').lower()
+            if country_code not in _ALLOWED_COUNTRY_CODES:
+                form.add_error(
+                    'address',
+                    "Tasks can only be created in Ukraine, Sweden, or Norway. "
+                    "Please enter an address in one of those countries."
+                )
+            else:
+                task.save()
+                task.required_skills.set(
+                    Skill.objects.filter(id__in=request.POST.getlist('required_skills'))
+                )
+                messages.success(request, "Task updated.")
+                return redirect('tasks:task_detail', pk=task.pk)
     else:
         form = TaskForm(instance=task)
 
-    return render(request, 'tasks/task_form.html', {'form': form, 'action': 'Edit', 'task': task})
+    return render(request, 'tasks/task_form.html', {
+        'form': form,
+        'action': 'Edit',
+        'task': task,
+        **_skills_context(request, task),
+    })
 
 
 @login_required
@@ -257,7 +330,9 @@ def task_delete(request, pk):
         return redirect('tasks:task_detail', pk=pk)
     if task.assigned_volunteers.exists() or task.status == Task.Status.COMPLETED:
         task.is_archived = True
-        task.save(update_fields=['is_archived'])
+        if task.status == Task.Status.IN_PROGRESS:
+            task.status = Task.Status.COMPLETED
+        task.save(update_fields=['is_archived', 'status', 'updated_at'])
         messages.success(request, f"Task '{task.title}' archived.")
     else:
         task.delete()
@@ -376,6 +451,30 @@ def task_complete(request, pk):
     task.status = Task.Status.COMPLETED
     task.save()
     messages.success(request, f"Task '{task.title}' marked as Completed.")
+    return redirect('tasks:task_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def task_remove_volunteer(request, pk, vol_id):
+    """Coordinator removes a specific volunteer from a task."""
+    task = get_object_or_404(Task, pk=pk)
+    if not request.user.is_coordinator():
+        messages.error(request, "Only coordinators can remove volunteers.")
+        return redirect('tasks:task_detail', pk=pk)
+    if not request.user.can_manage_task(task):
+        messages.error(request, "You can only manage tasks created by you or your organisation.")
+        return redirect('tasks:task_detail', pk=pk)
+    if task.status == Task.Status.COMPLETED:
+        messages.error(request, "Cannot remove volunteers from a completed task.")
+        return redirect('tasks:task_detail', pk=pk)
+
+    volunteer = get_object_or_404(task.assigned_volunteers, pk=vol_id)
+    task.assigned_volunteers.remove(volunteer)
+    if task.assigned_volunteers.count() == 0:
+        task.status = Task.Status.OPEN
+        task.save(update_fields=['status', 'updated_at'])
+    messages.success(request, f"{volunteer.username} has been removed from the task.")
     return redirect('tasks:task_detail', pk=pk)
 
 

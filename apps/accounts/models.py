@@ -36,6 +36,8 @@ class User(AbstractUser):
         VOLUNTEER = 'volunteer', 'Volunteer'
         COORDINATOR = 'coordinator', 'Coordinator'
 
+    email = models.EmailField(unique=True)
+
     role = models.CharField(
         max_length=20,
         choices=Role.choices,

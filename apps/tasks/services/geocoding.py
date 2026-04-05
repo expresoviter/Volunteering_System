@@ -16,17 +16,31 @@ def geocode_address(address: str) -> tuple[float, float] | tuple[None, None]:
     a unique User-Agent string. For production use, consider hosting a local
     Nominatim instance or using a paid geocoding service.
     """
+    result = geocode_address_full(address)
+    return result['lat'], result['lon']
+
+
+def geocode_address_full(address: str) -> dict:
+    """
+    Geocode an address and return a dict with keys:
+      lat, lon     — floats or None
+      country_code — ISO 3166-1 alpha-2 lowercase string (e.g. 'ua', 'se', 'no'), or None
+    """
     geolocator = Nominatim(user_agent=settings.NOMINATIM_USER_AGENT)
     try:
-        location = geolocator.geocode(address, timeout=10)
+        location = geolocator.geocode(address, addressdetails=True, timeout=10)
         if location is None:
             logger.warning("Geocoding returned no results for address: %s", address)
-            return None, None
-        logger.info("Geocoded '%s' -> (%.6f, %.6f)", address, location.latitude, location.longitude)
-        return location.latitude, location.longitude
+            return {'lat': None, 'lon': None, 'country_code': None}
+        country_code = (location.raw.get('address') or {}).get('country_code', None)
+        logger.info(
+            "Geocoded '%s' -> (%.6f, %.6f) country_code=%s",
+            address, location.latitude, location.longitude, country_code,
+        )
+        return {'lat': location.latitude, 'lon': location.longitude, 'country_code': country_code}
     except GeocoderTimedOut:
         logger.error("Geocoding timed out for address: %s", address)
-        return None, None
+        return {'lat': None, 'lon': None, 'country_code': None}
     except GeocoderServiceError as exc:
         logger.error("Geocoding service error for address '%s': %s", address, exc)
-        return None, None
+        return {'lat': None, 'lon': None, 'country_code': None}

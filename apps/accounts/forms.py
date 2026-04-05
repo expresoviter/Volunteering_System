@@ -39,6 +39,10 @@ class RegistrationForm(UserCreationForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        email = cleaned_data.get('email')
+        if email and User.objects.filter(email__iexact=email).exists():
+            self.add_error('email', 'A user with this email address already exists.')
+
         role = cleaned_data.get('role')
         org_choice = cleaned_data.get('organization_choice', ORG_NONE)
         new_org_name = cleaned_data.get('new_organization_name', '').strip()

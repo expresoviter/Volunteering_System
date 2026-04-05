@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from apps.accounts.models import Organization
 from apps.tasks.models import Task
-from apps.volunteers.models import VolunteerProfile
+from apps.volunteers.models import Skill, VolunteerProfile
 
 User = get_user_model()
 
@@ -151,6 +151,38 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Seeding database with Akershus demo data...")
 
+        # ── Skills ─────────────────────────────────────────────────────────────
+        SKILL_DEFS = [
+            ('medical',   'First Aid'),
+            ('medical',   'CPR'),
+            ('medical',   'Nursing'),
+            ('medical',   'Mental Health Support'),
+            ('transport', 'Car Driver'),
+            ('transport', 'Truck Driver'),
+            ('transport', 'Cyclist'),
+            ('physical',  'Heavy Lifting'),
+            ('physical',  'Construction'),
+            ('practical', 'Cooking'),
+            ('practical', 'Cleaning'),
+            ('practical', 'Childcare'),
+            ('practical', 'Elderly Care'),
+            ('technical', 'IT Support'),
+            ('technical', 'Photography'),
+            ('social',    'Event Organisation'),
+            ('social',    'Community Outreach'),
+            ('social',    'Counselling'),
+            ('language',  'English'),
+            ('language',  'Ukrainian'),
+            ('language',  'Norwegian'),
+            ('language',  'Swedish'),
+            ('language',  'German'),
+        ]
+        skill_objects = {}
+        for category, name in SKILL_DEFS:
+            obj, _ = Skill.objects.get_or_create(name=name, defaults={'category': category})
+            skill_objects[name] = obj
+        self.stdout.write(self.style.SUCCESS(f"  Ensured {len(skill_objects)} skills"))
+
         # ── Superuser / admin ──────────────────────────────────────────────────
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser(
@@ -226,6 +258,8 @@ class Command(BaseCommand):
                 profile, _ = VolunteerProfile.objects.get_or_create(user=u)
                 profile.last_latitude  = loc[1] + random.uniform(-0.02, 0.02)
                 profile.last_longitude = loc[2] + random.uniform(-0.02, 0.02)
+                all_skills = list(skill_objects.values())
+                profile.skills.set(random.sample(all_skills, min(4, len(all_skills))))
                 profile.save()
                 self.stdout.write(self.style.SUCCESS(f"  Created volunteer: {username} / {password}"))
 
@@ -261,6 +295,11 @@ class Command(BaseCommand):
                 latitude=loc[1] + random.uniform(-0.01, 0.01),
                 longitude=loc[2] + random.uniform(-0.01, 0.01),
             )
+            # Assign 0-3 random required skills per task
+            all_skills = list(skill_objects.values())
+            n_skills = random.randint(0, 3)
+            if n_skills:
+                task.required_skills.set(random.sample(all_skills, n_skills))
             task_count += 1
 
         self.stdout.write(self.style.SUCCESS(f"  Created {task_count} tasks."))

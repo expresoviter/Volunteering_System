@@ -31,10 +31,6 @@
                 <p><i class="bi bi-geo-alt"></i> {{ active_task.address }}</p>
                 <div class="d-flex gap-2">
                     <a href="/tasks/{{ active_task.id }}/" class="btn btn-outline-primary btn-sm">View Details</a>
-                    <form method="post" action="/tasks/{{ active_task.id }}/complete/">
-                        {% csrf_token %}
-                        <button class="btn btn-success btn-sm"><i class="bi bi-flag"></i> Mark Complete</button>
-                    </form>
                 </div>
             </div>
         </div>
@@ -44,6 +40,31 @@
             <a href="/tasks/">Browse available tasks →</a>
         </div>
         {% endif %}
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-tools"></i> My Skills</span>
+                <a href="/volunteers/profile/edit/" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+            </div>
+            <div class="card-body">
+                {% if volunteer_skills %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for skill in volunteer_skills %}
+                        <span class="badge bg-primary px-2 py-1" style="font-size:0.85rem;">
+                            {{ skill.name }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">
+                        No skills added yet.
+                        <a href="/volunteers/profile/edit/">Add skills →</a>
+                    </p>
+                {% endif %}
+            </div>
+        </div>
 
         <div class="card shadow-sm">
             <div class="card-header"><i class="bi bi-clock-history"></i> Completed Tasks</div>

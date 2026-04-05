@@ -55,11 +55,34 @@
                         {% if assigned_volunteers %}
                             <ul class="list-unstyled mt-1 mb-0">
                                 {% for vol in assigned_volunteers %}
-                                    <li class="small text-muted"><i class="bi bi-person-check"></i> {{ vol.username }}</li>
+                                <li class="d-flex align-items-center gap-2 small text-muted">
+                                    <i class="bi bi-person-check"></i> {{ vol.username }}
+                                    {% if can_manage and task.status != 'completed' %}
+                                    <form method="post" action="/tasks/{{ task.id }}/remove-volunteer/{{ vol.id }}/"
+                                          onsubmit="return confirm('Remove {{ vol.username }} from this task?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-link btn-sm text-danger p-0" title="Remove volunteer">
+                                            <i class="bi bi-x-circle"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </li>
                                 {% endfor %}
                             </ul>
                         {% endif %}
                     </dd>
+                    {% with skills=task.required_skills.all %}
+                    {% if skills %}
+                    <dt class="col-sm-4">Skills needed</dt>
+                    <dd class="col-sm-8">
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for skill in skills %}
+                            <span class="badge bg-secondary">{{ skill.name }}</span>
+                            {% endfor %}
+                        </div>
+                    </dd>
+                    {% endif %}
+                    {% endwith %}
                     <dt class="col-sm-4">Created</dt>
                     <dd class="col-sm-8">{{ task.created_at|date:"d M Y H:i" }}</dd>
                 </dl>
@@ -103,12 +126,22 @@
                     {% endif %}
 
                     {% if can_manage %}
+                        {% if task.status == 'open' and not task.is_archived %}
                         <a href="/tasks/{{ task.id }}/edit/" class="btn btn-outline-secondary">
                             <i class="bi bi-pencil"></i> Edit
                         </a>
-                        {% if task.volunteers_count > 0 or task.status == 'completed' %}
+                        {% endif %}
+                        {% if not task.is_archived and task.volunteers_count > 0 %}
                         <form method="post" action="/tasks/{{ task.id }}/delete/"
-                              onsubmit="return confirm('This task has been taken or completed and will be archived. Continue?');">
+                              onsubmit="return confirm('{% if task.status == "in_progress" %}This task is currently in progress and will be marked as Completed and archived. Continue?{% else %}This task will be archived. Continue?{% endif %}');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-archive"></i> Archive
+                            </button>
+                        </form>
+                        {% elif not task.is_archived and task.status == "completed" %}
+                        <form method="post" action="/tasks/{{ task.id }}/delete/"
+                              onsubmit="return confirm('This task will be archived. Continue?');">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-warning">
                                 <i class="bi bi-archive"></i> Archive
