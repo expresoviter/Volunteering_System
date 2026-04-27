@@ -85,6 +85,14 @@
                     {% endwith %}
                     <dt class="col-sm-4">Created</dt>
                     <dd class="col-sm-8">{{ task.created_at|date:"d M Y H:i" }}</dd>
+                    {% if task.start_date %}
+                    <dt class="col-sm-4">Start Date</dt>
+                    <dd class="col-sm-8">{{ task.start_date|date:"d M Y" }}</dd>
+                    {% endif %}
+                    {% if task.end_date %}
+                    <dt class="col-sm-4">End Date</dt>
+                    <dd class="col-sm-8">{{ task.end_date|date:"d M Y" }}</dd>
+                    {% endif %}
                 </dl>
 
                 <div class="d-flex gap-2 mt-3 flex-wrap">

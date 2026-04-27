@@ -95,7 +95,7 @@ def task_list(request):
         if org_q is not None:
             base_qs = base_qs.filter(org_q)
         tasks = base_qs.prefetch_related(*prefetch)
-        recommended_ids = set()
+        recommended_ids = {}
     else:
         # Volunteer view: filter by radius if location is known
         if volunteer_lat and volunteer_lon:
@@ -132,12 +132,20 @@ def task_list(request):
             except Exception:
                 volunteer_skill_ids = frozenset()
 
-            recommended_ids = get_recommended_tasks_for_volunteer(
+            ranked_ids = get_recommended_tasks_for_volunteer(
                 volunteer_id=user.id,
                 volunteer_lat=float(volunteer_lat),
                 volunteer_lon=float(volunteer_lon),
                 open_tasks=nearby_tasks,
                 volunteer_skill_ids=volunteer_skill_ids,
+            )
+            # Top 3 get a badge; dict maps task_id → rank (1, 2, 3)
+            recommended_ids = {tid: rank for rank, tid in enumerate(ranked_ids[:3], start=1)}
+            # Sort all tasks: recommended first (by rank), then by cost position
+            rank_position = {tid: pos for pos, tid in enumerate(ranked_ids)}
+            tasks = sorted(
+                tasks,
+                key=lambda t: rank_position.get(t.id, len(ranked_ids)),
             )
         else:
             radius_km = float(settings.TASK_RADIUS_KM)
@@ -151,10 +159,16 @@ def task_list(request):
             if org_q is not None:
                 base_qs = base_qs.filter(org_q)
             tasks = base_qs.prefetch_related(*prefetch)
-            recommended_ids = set()
+            recommended_ids = {}
 
     if user.is_coordinator():
         radius_km = float(settings.TASK_RADIUS_KM)
+
+    # Annotate each task with its recommendation rank (0 = not recommended).
+    # Ensures task.recommendation_rank is always available in the template.
+    rank_lookup = recommended_ids if isinstance(recommended_ids, dict) else {}
+    for task in tasks:
+        task.recommendation_rank = rank_lookup.get(task.id, 0)
 
     # Build GeoJSON for map markers
     features = []
@@ -168,7 +182,7 @@ def task_list(request):
                     'title': task.title,
                     'status': task.status,
                     'priority': task.priority,
-                    'recommended': task.id in recommended_ids,
+                    'recommendation_rank': recommended_ids.get(task.id, 0) if isinstance(recommended_ids, dict) else 0,
                     'volunteers_count': task.volunteers_count,
                     'volunteers_needed': task.volunteers_needed,
                     'url': f'/tasks/{task.id}/',
@@ -182,6 +196,7 @@ def task_list(request):
         'geojson': geojson,
         'volunteer_lat': volunteer_lat,
         'volunteer_lon': volunteer_lon,
+        'location_source': request.session.get('location_source', 'gps'),
         'verified_orgs': verified_orgs,
         'selected_orgs': selected_orgs,
         'radius_km': radius_km,
@@ -489,8 +504,11 @@ def update_location(request):
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)
 
+    source = data.get('source', 'gps')
+
     request.session['volunteer_lat'] = lat
     request.session['volunteer_lon'] = lon
+    request.session['location_source'] = source
 
     if request.user.is_volunteer():
         profile, _ = VolunteerProfile.objects.get_or_create(user=request.user)

@@ -7,6 +7,7 @@
 .status-open { border-left: 4px solid #dc3545; }
 .status-in_progress { border-left: 4px solid #ffc107; }
 .status-completed { border-left: 4px solid #198754; }
+.task-title-link:hover { text-decoration: underline; }
 </style>
 {% endblock %}
 
@@ -28,15 +29,50 @@
     </div>
 </div>
 
-{% if not volunteer_lat %}
-<div class="alert alert-info">
-    <i class="bi bi-geo-alt"></i>
-    <strong>Share your location</strong> to centre the map on your area{% if user.role == 'volunteer' %} and get personalised recommendations{% endif %}.
-    <button class="btn btn-sm btn-outline-primary ms-2" onclick="requestLocation()">
-        <i class="bi bi-crosshair"></i> Share Location
-    </button>
+<div class="alert {% if volunteer_lat %}alert-success{% else %}alert-info{% endif %} mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <span>
+            <i class="bi bi-geo-alt"></i>
+            {% if volunteer_lat %}
+                <strong>Location active</strong>
+                {% if location_source == 'manual' %}
+                    <span class="badge bg-warning text-dark ms-1">Manual</span>
+                {% else %}
+                    <span class="badge bg-primary ms-1">GPS</span>
+                {% endif %}
+                {% if user.role == 'volunteer' %}&mdash; recommendations are on{% endif %}
+            {% else %}
+                <strong>Share your location</strong> to centre the map{% if user.role == 'volunteer' %} and get personalised recommendations{% endif %}.
+            {% endif %}
+        </span>
+        <div class="ms-auto d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-primary" onclick="requestLocation()">
+                <i class="bi bi-crosshair"></i> {% if volunteer_lat %}Use GPS{% else %}Share Location{% endif %}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#manualAddressBox">
+                <i class="bi bi-pencil"></i> Enter address manually
+            </button>
+        </div>
+    </div>
+    <div class="collapse mt-2" id="manualAddressBox">
+        <div class="card shadow-sm">
+            <div class="card-body py-2">
+                <label class="form-label fw-semibold mb-1">
+                    <i class="bi bi-search"></i> Enter your address
+                </label>
+                <div class="input-group">
+                    <input type="text" id="manualAddressInput" class="form-control"
+                           placeholder="e.g. Khreshchatyk 1, Kyiv" autocomplete="off">
+                    <button class="btn btn-primary" onclick="locateByAddress()">
+                        <i class="bi bi-geo"></i> Locate me
+                    </button>
+                </div>
+                <div id="manualAddressError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
 </div>
-{% endif %}
 
 <!-- Organisation Filter -->
 <div class="card shadow-sm mb-3">
@@ -111,10 +147,19 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <h6 class="card-title mb-0">
-                        {% if task.id in recommended_ids %}
-                            <span class="badge bg-warning text-dark recommended-badge me-1">🔥 Recommended</span>
+                        {% if task.recommendation_rank == 1 %}
+                            <span class="badge bg-warning text-dark me-1">Top Pick</span>
+                        {% elif task.recommendation_rank == 2 %}
+                            <span class="badge bg-info text-dark me-1">2nd Pick</span>
+                        {% elif task.recommendation_rank == 3 %}
+                            <span class="badge bg-secondary me-1">3rd Pick</span>
                         {% endif %}
-                        {{ task.title }}
+                        {% if task.has_coordinates %}
+                            <span class="task-title-link" onclick="focusTask({{ task.id }})"
+                                  style="cursor:pointer;" title="Show on map">{{ task.title }}</span>
+                        {% else %}
+                            {{ task.title }}
+                        {% endif %}
                     </h6>
                     <span class="badge badge-priority-{{ task.priority }} ms-2">
                         {{ task.get_priority_display }}
@@ -122,6 +167,16 @@
                 </div>
                 <p class="card-text text-muted small">{{ task.description|truncatechars:100 }}</p>
                 <p class="small text-muted"><i class="bi bi-geo-alt"></i> {{ task.address|truncatechars:60 }}</p>
+                {% if task.start_date %}
+                <p class="small text-muted mb-1">
+                    <i class="bi bi-calendar-event"></i>
+                    {% if task.end_date and task.end_date != task.start_date %}
+                        {{ task.start_date|date:"d M Y" }} – {{ task.end_date|date:"d M Y" }}
+                    {% else %}
+                        {{ task.start_date|date:"d M Y" }}
+                    {% endif %}
+                </p>
+                {% endif %}
                 {% if task.created_by.organization and task.created_by.organization.is_verified %}
                 <p class="small text-muted mb-1"><i class="bi bi-building"></i> {{ task.created_by.organization.name }}</p>
                 {% endif %}
@@ -177,11 +232,12 @@ const GEOJSON = {{ geojson|safe }};
 const USER_ROLE = "{{ user.role }}";
 const VOL_LAT = {{ volunteer_lat|default:"null" }};
 const VOL_LON = {{ volunteer_lon|default:"null" }};
+const LOCATION_SOURCE = "{{ location_source|default:'gps' }}";
 const UPDATE_LOCATION_URL = "/tasks/api/update-location/";
 const CSRF_TOKEN = "{{ csrf_token }}";
 
-// Initialise map centred on Kyiv
-const map = L.map('map').setView([50.4501, 30.5234], 12);
+// Initialise map centred on Hallunda, Stockholm
+const map = L.map('map').setView([59.2437, 17.8246], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
@@ -190,9 +246,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 // Status colours
 const STATUS_COLORS = { open: '#dc3545', in_progress: '#ffc107', completed: '#198754' };
 
+const RANK_COLORS = { 1: '#ff6600', 2: '#0dcaf0', 3: '#6c757d' };
+const RANK_LABELS = { 1: 'Top Pick', 2: '2nd Pick', 3: '3rd Pick' };
+
 function makeMarker(feature) {
-    const { status, title, priority, recommended, url } = feature.properties;
-    const color = recommended ? '#ff6600' : (STATUS_COLORS[status] || '#0d6efd');
+    const { status, title, priority, recommendation_rank, url } = feature.properties;
+    const color = recommendation_rank ? RANK_COLORS[recommendation_rank] : (STATUS_COLORS[status] || '#0d6efd');
     const size = priority === 3 ? 14 : priority === 2 ? 12 : 10;
     const icon = L.divIcon({
         className: '',
@@ -204,11 +263,24 @@ function makeMarker(feature) {
         [feature.geometry.coordinates[1], feature.geometry.coordinates[0]],
         { icon }
     );
-    marker.bindPopup(`<b>${title}</b><br>Priority: ${priority}<br>Status: ${status}${recommended ? '<br>🔥 Recommended for you' : ''}<br><a href="${url}">View task →</a>`);
+    const rankLabel = recommendation_rank ? `<br><strong>${RANK_LABELS[recommendation_rank]}</strong>` : '';
+    marker.bindPopup(`<b>${title}</b>${rankLabel}<br>Priority: ${priority}<br>Status: ${status}<br><a href="${url}">View task →</a>`);
     return marker;
 }
 
-GEOJSON.features.forEach(f => makeMarker(f).addTo(map));
+const markerById = {};
+GEOJSON.features.forEach(f => {
+    const m = makeMarker(f).addTo(map);
+    markerById[f.properties.id] = m;
+});
+
+function focusTask(taskId) {
+    const m = markerById[taskId];
+    if (!m) return;
+    map.flyTo(m.getLatLng(), 15, { duration: 0.6 });
+    m.openPopup();
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
 // Volunteer location marker
 if (VOL_LAT && VOL_LON) {
@@ -230,7 +302,7 @@ setInterval(() => {
 
 function requestLocation() {
     if (!navigator.geolocation) {
-        alert('Geolocation is not supported by your browser.');
+        showManualAddressFallback('Geolocation is not supported by your browser.');
         return;
     }
     navigator.geolocation.getCurrentPosition(pos => {
@@ -238,11 +310,62 @@ function requestLocation() {
         fetch(UPDATE_LOCATION_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-            body: JSON.stringify({ latitude, longitude }),
+            body: JSON.stringify({ latitude, longitude, source: 'gps' }),
         }).then(() => window.location.reload());
     }, err => {
-        alert('Could not retrieve your location: ' + err.message);
+        showManualAddressFallback('Could not access your location. You can enter your address below instead.');
     });
+}
+
+function showManualAddressFallback(message) {
+    const box = document.getElementById('manualAddressBox');
+    if (box) {
+        box.classList.add('show');
+        const input = document.getElementById('manualAddressInput');
+        if (input) input.focus();
+        if (message) {
+            const err = document.getElementById('manualAddressError');
+            if (err) { err.textContent = message; err.style.display = 'block'; }
+        }
+    }
+}
+
+function locateByAddress() {
+    const input = document.getElementById('manualAddressInput');
+    const errorEl = document.getElementById('manualAddressError');
+    const address = input.value.trim();
+    if (!address) {
+        errorEl.textContent = 'Please enter an address.';
+        errorEl.style.display = 'block';
+        return;
+    }
+    errorEl.style.display = 'none';
+
+    const btn = input.nextElementSibling;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Locating…';
+
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+    fetch(url, { headers: { 'Accept-Language': 'en' } })
+        .then(r => r.json())
+        .then(results => {
+            if (!results.length) {
+                throw new Error('Address not found. Try a more specific address.');
+            }
+            const { lat, lon } = results[0];
+            return fetch(UPDATE_LOCATION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ latitude: parseFloat(lat), longitude: parseFloat(lon), source: 'manual' }),
+            });
+        })
+        .then(() => window.location.reload())
+        .catch(err => {
+            errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+            errorEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-geo"></i> Locate me';
+        });
 }
 
 // Radius slider — auto-submit on release
@@ -253,8 +376,9 @@ if (radiusSlider) {
     });
 }
 
-// Auto-request location for all users without a stored position
-if (!VOL_LAT) {
+// Auto-request GPS only when no location is stored at all.
+// If a manual location is already active, never override it automatically.
+if (!VOL_LAT && LOCATION_SOURCE !== 'manual') {
     setTimeout(requestLocation, 1000);
 }
 </script>

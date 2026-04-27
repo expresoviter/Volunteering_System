@@ -1,9 +1,10 @@
 """
 Seed data management command.
 Generates demo organisations, coordinators, volunteers, and tasks
-located in Akershus county, Norway.
+located in Hallunda / southern Stockholm, Sweden.
 """
 import random
+from datetime import date, timedelta
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from apps.accounts.models import Organization
@@ -12,144 +13,146 @@ from apps.volunteers.models import Skill, VolunteerProfile
 
 User = get_user_model()
 
-# Akershus county approximate bounding box
-AKERSHUS_LOCATIONS = [
+# Hallunda and surrounding neighbourhoods in Botkyrka / southern Stockholm
+HALLUNDA_LOCATIONS = [
     # (name hint, lat, lon)
-    ("Sandvika, Bærum",        59.8853, 10.5281),
-    ("Asker sentrum",          59.8336, 10.4392),
-    ("Jessheim, Ullensaker",   60.1448, 11.1736),
-    ("Lillestrøm",             59.9557, 11.0521),
-    ("Ski, Nordre Follo",      59.7189, 10.8310),
-    ("Drøbak, Frogn",          59.6617, 10.6152),
-    ("Ås sentrum",             59.6601, 10.7877),
-    ("Lørenskog sentrum",      59.9214, 10.9650),
-    ("Nittedal",               60.0620, 10.8735),
-    ("Eidsvoll sentrum",       60.3265, 11.2572),
-    ("Nesodden",               59.7953, 10.6541),
-    ("Nannestad",              60.2354, 11.1498),
-    ("Enebakk",                59.7500, 11.0667),
-    ("Rælingen",               59.9167, 11.0833),
-    ("Vestby",                 59.5667, 10.7500),
+    ("Hallunda centrum",        59.2437, 17.8246),
+    ("Norsborg",                59.2474, 17.8349),
+    ("Alby",                    59.2520, 17.8455),
+    ("Fittja",                  59.2522, 17.8609),
+    ("Tumba centrum",           59.1983, 17.8353),
+    ("Vårby gård",              59.2651, 17.8785),
+    ("Slagsta",                 59.2621, 17.8543),
+    ("Flemingsberg",            59.2178, 17.9426),
+    ("Huddinge centrum",        59.2379, 17.9813),
+    ("Skärholmen",              59.2772, 17.9076),
+    ("Vårberg",                 59.2741, 17.9037),
+    ("Kungens Kurva",           59.2630, 17.9254),
+    ("Bredäng",                 59.3019, 17.9219),
+    ("Sätra",                   59.2801, 17.9197),
+    ("Liljeholmen",             59.3090, 18.0219),
 ]
 
+TODAY = date.today()
+
 SAMPLE_TASKS = [
-    # (title, description, address, priority, status, volunteers_needed, org_key, archived)
+    # (title, description, address, priority, status, volunteers_needed, org_key, archived, start_offset_days, duration_days)
     (
-        "Food parcel delivery – Sandvika",
-        "Deliver food parcels to elderly residents in the Sandvika area. Requires a car.",
-        "Sandviksbodene 50, 1337 Sandvika",
-        3, Task.Status.OPEN, 2, "rk", False,
+        "Food parcel delivery – Hallunda",
+        "Deliver food parcels to elderly and low-income residents around Hallunda centrum. A car is required.",
+        "Hallunda torg 1, 145 68 Norsborg",
+        3, Task.Status.OPEN, 2, "rk", False, 0, 1,
     ),
     (
-        "Winter clothing drive – Asker",
-        "Sort and distribute donated winter clothing at the Asker community centre.",
-        "Asker Torg 2, 1384 Asker",
-        2, Task.Status.OPEN, 3, "rk", False,
+        "Winter clothing drive – Norsborg",
+        "Sort and distribute donated winter clothing at the Norsborg community centre.",
+        "Norsborgs torg 3, 145 52 Norsborg",
+        2, Task.Status.OPEN, 3, "rk", False, 2, 2,
     ),
     (
-        "Medical supply transport – Jessheim",
-        "Transport medical supplies from the Jessheim depot to the local health clinic.",
-        "Rådhusplassen 1, 2050 Jessheim",
-        3, Task.Status.IN_PROGRESS, 1, "rk", False,
+        "Medical supply transport – Tumba",
+        "Transport medical supplies from the Tumba depot to the local health clinic.",
+        "Gymnasievägen 1, 147 40 Tumba",
+        3, Task.Status.IN_PROGRESS, 1, "rk", False, -1, 3,
     ),
     (
-        "Community kitchen – Lillestrøm",
-        "Assist in preparing and serving warm meals at the Lillestrøm soup kitchen.",
-        "Storgata 9, 2001 Lillestrøm",
-        2, Task.Status.OPEN, 4, "fk", False,
+        "Community kitchen – Alby",
+        "Assist in preparing and serving warm meals at the Alby soup kitchen.",
+        "Albybergsringen 30, 145 59 Norsborg",
+        2, Task.Status.OPEN, 4, "fk", False, 1, 1,
     ),
     (
-        "After-school tutoring – Ski",
-        "Provide homework help for primary school children at the Ski library.",
-        "Idrettsveien 5, 1400 Ski",
-        1, Task.Status.OPEN, 2, "fk", False,
+        "After-school tutoring – Fittja",
+        "Provide homework help for primary school children at the Fittja library.",
+        "Fittja torg 1, 145 72 Norsborg",
+        1, Task.Status.OPEN, 2, "fk", False, 3, 7,
     ),
     (
-        "Elderly home visits – Drøbak",
-        "Visit isolated elderly residents in Drøbak for companionship and light assistance.",
-        "Storgata 32, 1440 Drøbak",
-        2, Task.Status.OPEN, 1, "fk", False,
+        "Elderly home visits – Vårby",
+        "Visit isolated elderly residents in Vårby for companionship and light errands.",
+        "Vårby allé 50, 143 41 Vårby",
+        2, Task.Status.OPEN, 1, "fk", False, 0, 14,
     ),
     (
-        "Park clean-up – Ås",
-        "Community litter pick and park maintenance in Ås town centre.",
-        "Moerveien 10, 1430 Ås",
-        1, Task.Status.OPEN, 5, None, False,
+        "Park clean-up – Hallunda",
+        "Community litter pick and park maintenance at Hallundaparken.",
+        "Hallundaparken, 145 68 Norsborg",
+        1, Task.Status.OPEN, 5, None, False, 5, 1,
     ),
     (
-        "Refugee welcome support – Lørenskog",
-        "Help newly arrived refugees with orientation, paperwork, and language practice.",
-        "Lørenskog sentrum, 1470 Lørenskog",
-        3, Task.Status.OPEN, 2, None, False,
+        "Refugee welcome support – Botkyrka",
+        "Help newly arrived refugees with orientation, paperwork, and Swedish language practice.",
+        "Botkyrka kommunhus, Munkhättevägen 45, 147 85 Tumba",
+        3, Task.Status.OPEN, 2, None, False, 0, 30,
     ),
     (
-        "First aid post – Nittedal",
-        "Staff a first-aid post at the Nittedal local sports event.",
-        "Rotnes, 1482 Nittedal",
-        2, Task.Status.IN_PROGRESS, 2, "rk", False,
+        "First aid post – Skärholmen",
+        "Staff a first-aid post at the Skärholmen local community sports event.",
+        "Skärholmstorget 1, 127 48 Skärholmen",
+        2, Task.Status.IN_PROGRESS, 2, "rk", False, -2, 2,
     ),
     (
-        "Transport for disabled residents – Eidsvoll",
-        "Drive residents with mobility challenges to medical appointments in Eidsvoll.",
-        "Rådhusgata 1, 2080 Eidsvoll",
-        3, Task.Status.OPEN, 1, None, False,
+        "Transport for disabled residents – Flemingsberg",
+        "Drive residents with mobility challenges to medical appointments in Flemingsberg.",
+        "Hälsovägen 11, 141 57 Huddinge",
+        3, Task.Status.OPEN, 1, None, False, 1, 5,
     ),
     (
-        "Coastal clean-up – Nesodden",
-        "Collect marine litter along the Nesodden shoreline.",
-        "Nesoddtangen, 1450 Nesoddtangen",
-        1, Task.Status.OPEN, 6, "fk", False,
+        "Shoreline clean-up – Vårby",
+        "Collect litter along the Lake Mälaren shoreline near Vårby gård.",
+        "Vårby strandväg, 143 41 Vårby",
+        1, Task.Status.OPEN, 6, "fk", False, 7, 1,
     ),
     (
-        "Food bank sorting – Nannestad",
-        "Sort and repack donated food at the Nannestad food bank warehouse.",
-        "Nannestad sentrum, 2030 Nannestad",
-        2, Task.Status.OPEN, 3, None, False,
+        "Food bank sorting – Huddinge",
+        "Sort and repack donated food at the Huddinge food bank warehouse.",
+        "Industrivägen 10, 141 48 Huddinge",
+        2, Task.Status.OPEN, 3, None, False, 2, 1,
     ),
     (
-        "Crisis shelter assistance – Enebakk",
-        "Provide overnight support at the Enebakk emergency shelter.",
-        "Enebakk sentrum, 1912 Enebakk",
-        3, Task.Status.COMPLETED, 2, "rk", True,
+        "Crisis shelter assistance – Bredäng",
+        "Provide overnight support at the Bredäng emergency shelter.",
+        "Bredängs torg 10, 127 31 Skärholmen",
+        3, Task.Status.COMPLETED, 2, "rk", True, -14, 2,
     ),
     (
-        "Document guidance – Rælingen",
-        "Help residents complete administrative forms at the Rælingen municipal office.",
-        "Smedsrudveien 1, 2005 Rælingen",
-        1, Task.Status.COMPLETED, 1, "fk", True,
+        "Document guidance – Sätra",
+        "Help residents complete administrative forms at the Sätra community drop-in.",
+        "Sätragången 6, 127 38 Skärholmen",
+        1, Task.Status.COMPLETED, 1, "fk", True, -10, 3,
     ),
     (
-        "Youth sports coaching – Vestby",
-        "Coach a junior football session at Vestby sports ground.",
-        "Vestby sentrum, 1540 Vestby",
-        1, Task.Status.OPEN, 2, None, False,
+        "Youth sports coaching – Tumba",
+        "Coach a junior football session at Tumba IP sports ground.",
+        "Tumba idrottsplats, Idrottsvägen 1, 147 40 Tumba",
+        1, Task.Status.OPEN, 2, None, False, 4, 1,
     ),
     (
-        "Emergency supply run – Lillestrøm",
-        "Urgent delivery of hygiene kits to a temporary shelter in Lillestrøm.",
-        "Jernbanegata 3, 2001 Lillestrøm",
-        3, Task.Status.OPEN, 1, "rk", False,
+        "Emergency supply run – Alby",
+        "Urgent delivery of hygiene kits to a temporary shelter in Alby.",
+        "Alby torg, 145 59 Norsborg",
+        3, Task.Status.OPEN, 1, "rk", False, 0, 1,
     ),
     (
-        "Garden help for elderly – Asker",
-        "Assist elderly homeowners in Asker with spring garden tidying.",
-        "Askerhagen 5, 1384 Asker",
-        1, Task.Status.OPEN, 3, "fk", False,
+        "Garden help for elderly – Hallunda",
+        "Assist elderly homeowners in Hallunda with spring garden tidying.",
+        "Hallunda torg 5, 145 68 Norsborg",
+        1, Task.Status.OPEN, 3, "fk", False, 6, 2,
     ),
     (
-        "Blood donation awareness – Sandvika",
-        "Distribute information leaflets and register donors at Sandvika Storsenter.",
-        "Sandvika Storsenter, 1338 Sandvika",
-        2, Task.Status.COMPLETED, 2, "rk", True,
+        "Blood donation awareness – Skärholmen",
+        "Distribute information leaflets and register donors at Skärholmen Centrum.",
+        "Skärholmen Centrum, 127 48 Skärholmen",
+        2, Task.Status.COMPLETED, 2, "rk", True, -7, 1,
     ),
 ]
 
 
 class Command(BaseCommand):
-    help = "Seed the database with Akershus-based demo organisations, users, and tasks."
+    help = "Seed the database with Hallunda/Stockholm demo organisations, users, and tasks."
 
     def handle(self, *args, **options):
-        self.stdout.write("Seeding database with Akershus demo data...")
+        self.stdout.write("Seeding database with Hallunda/Stockholm demo data...")
 
         # ── Skills ─────────────────────────────────────────────────────────────
         SKILL_DEFS = [
@@ -173,9 +176,9 @@ class Command(BaseCommand):
             ('social',    'Counselling'),
             ('language',  'English'),
             ('language',  'Ukrainian'),
-            ('language',  'Norwegian'),
             ('language',  'Swedish'),
-            ('language',  'German'),
+            ('language',  'Arabic'),
+            ('language',  'Somali'),
         ]
         skill_objects = {}
         for category, name in SKILL_DEFS:
@@ -194,7 +197,7 @@ class Command(BaseCommand):
         admin_user = User.objects.get(username="admin")
 
         rk_org, _ = Organization.objects.get_or_create(
-            name="Røde Kors Akershus",
+            name="Röda Korset Botkyrka",
             defaults={"is_verified": True, "created_by": admin_user},
         )
         if not rk_org.is_verified:
@@ -202,7 +205,7 @@ class Command(BaseCommand):
             rk_org.save()
 
         fk_org, _ = Organization.objects.get_or_create(
-            name="Frivilligsentralen Akershus",
+            name="Botkyrka Frivilligcenter",
             defaults={"is_verified": True, "created_by": admin_user},
         )
         if not fk_org.is_verified:
@@ -211,7 +214,7 @@ class Command(BaseCommand):
 
         # Unverified org — exists but cannot post tasks
         Organization.objects.get_or_create(
-            name="Akershus Hjelpekorps",
+            name="Stockholms Hjälpkår",
             defaults={"is_verified": False, "created_by": admin_user},
         )
 
@@ -222,9 +225,9 @@ class Command(BaseCommand):
         # ── Coordinators ───────────────────────────────────────────────────────
         coordinators_data = [
             # (username, password, first, last, org, is_verified)
-            ("coord_rk",   "coord123", "Erik",    "Hansen",   rk_org, True),
-            ("coord_fk",   "coord123", "Ingrid",  "Berg",     fk_org, True),
-            ("coord_ind",  "coord123", "Lars",    "Nilsson",  None,   True),
+            ("coord_rk",   "coord123", "Erik",    "Lindqvist",  rk_org, True),
+            ("coord_fk",   "coord123", "Ingrid",  "Bergström",  fk_org, True),
+            ("coord_ind",  "coord123", "Lars",    "Nilsson",    None,   True),
         ]
         coord_objects = {}
         for username, password, first, last, org, verified in coordinators_data:
@@ -241,12 +244,12 @@ class Command(BaseCommand):
 
         # ── Volunteers ─────────────────────────────────────────────────────────
         volunteers_data = [
-            ("vol_anna",   "vol123", "Anna",    "Larsen"),
-            ("vol_ole",    "vol123", "Ole",     "Johansen"),
-            ("vol_maja",   "vol123", "Maja",    "Andersen"),
-            ("vol_tobias", "vol123", "Tobias",  "Eriksen"),
-            ("vol_sara",   "vol123", "Sara",    "Dahl"),
-            ("vol_henrik", "vol123", "Henrik",  "Lie"),
+            ("vol_anna",   "vol123", "Anna",    "Karlsson"),
+            ("vol_ole",    "vol123", "Johan",   "Svensson"),
+            ("vol_maja",   "vol123", "Maja",    "Andersson"),
+            ("vol_tobias", "vol123", "Tobias",  "Eriksson"),
+            ("vol_sara",   "vol123", "Sara",    "Johansson"),
+            ("vol_henrik", "vol123", "Henrik",  "Larsson"),
         ]
         for username, password, first, last in volunteers_data:
             if not User.objects.filter(username=username).exists():
@@ -254,7 +257,7 @@ class Command(BaseCommand):
                     username, f"{username}@example.com", password,
                     role="volunteer", first_name=first, last_name=last,
                 )
-                loc = random.choice(AKERSHUS_LOCATIONS)
+                loc = random.choice(HALLUNDA_LOCATIONS)
                 profile, _ = VolunteerProfile.objects.get_or_create(user=u)
                 profile.last_latitude  = loc[1] + random.uniform(-0.02, 0.02)
                 profile.last_longitude = loc[2] + random.uniform(-0.02, 0.02)
@@ -264,7 +267,6 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"  Created volunteer: {username} / {password}"))
 
         # ── Tasks ──────────────────────────────────────────────────────────────
-        # Coordinator assignment: rk tasks → coord_rk, fk tasks → coord_fk, None → coord_ind
         COORD_FOR_ORG = {
             "rk":  coord_objects["coord_rk"],
             "fk":  coord_objects["coord_fk"],
@@ -272,16 +274,18 @@ class Command(BaseCommand):
         }
 
         task_count = 0
-        loc_cycle = list(AKERSHUS_LOCATIONS)
+        loc_cycle = list(HALLUNDA_LOCATIONS)
         random.shuffle(loc_cycle)
 
-        for i, (title, desc, address, priority, status, vol_needed, org_key, archived) in enumerate(SAMPLE_TASKS):
+        for i, (title, desc, address, priority, status, vol_needed, org_key, archived, start_offset, duration) in enumerate(SAMPLE_TASKS):
             if Task.objects.filter(title=title).exists():
                 continue
 
             loc = loc_cycle[i % len(loc_cycle)]
-            org = ORG_MAP.get(org_key)
             creator = COORD_FOR_ORG[org_key]
+
+            start = TODAY + timedelta(days=start_offset)
+            end   = start + timedelta(days=duration)
 
             task = Task.objects.create(
                 title=title,
@@ -292,10 +296,11 @@ class Command(BaseCommand):
                 volunteers_needed=vol_needed,
                 created_by=creator,
                 is_archived=archived,
-                latitude=loc[1] + random.uniform(-0.01, 0.01),
+                latitude=loc[1]  + random.uniform(-0.01, 0.01),
                 longitude=loc[2] + random.uniform(-0.01, 0.01),
+                start_date=start,
+                end_date=end,
             )
-            # Assign 0-3 random required skills per task
             all_skills = list(skill_objects.values())
             n_skills = random.randint(0, 3)
             if n_skills:
@@ -306,8 +311,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Done. Demo accounts:"))
         self.stdout.write("")
         self.stdout.write("  admin      / admin123  — superuser")
-        self.stdout.write("  coord_rk   / coord123  — coordinator, Røde Kors Akershus")
-        self.stdout.write("  coord_fk   / coord123  — coordinator, Frivilligsentralen Akershus")
+        self.stdout.write("  coord_rk   / coord123  — coordinator, Röda Korset Botkyrka")
+        self.stdout.write("  coord_fk   / coord123  — coordinator, Botkyrka Frivilligcenter")
         self.stdout.write("  coord_ind  / coord123  — independent coordinator (no org)")
         self.stdout.write("  vol_anna   / vol123    — volunteer")
         self.stdout.write("  vol_ole    / vol123    — volunteer")

@@ -27,12 +27,21 @@
                             <i class="bi bi-calendar3"></i>
                             Registered {{ coordinator.date_joined|date:"d M Y" }}
                         </p>
-                        <form method="post" action="{% url 'accounts:verify_coordinator' coordinator.pk %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-success btn-sm w-100">
-                                <i class="bi bi-check-circle"></i> Verify
-                            </button>
-                        </form>
+                        <div class="d-flex gap-2">
+                            <form method="post" action="{% url 'accounts:verify_coordinator' coordinator.pk %}" class="flex-fill">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success btn-sm w-100">
+                                    <i class="bi bi-check-circle"></i> Verify
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'accounts:decline_coordinator' coordinator.pk %}" class="flex-fill"
+                                  onsubmit="return confirm('Decline {{ coordinator.username }}? They will be removed from the organisation.')">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                                    <i class="bi bi-x-circle"></i> Decline
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>

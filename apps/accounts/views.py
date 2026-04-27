@@ -255,3 +255,26 @@ def verify_coordinator(request, pk):
     target.save(update_fields=['is_verified'])
     messages.success(request, f"{target.username} has been verified and can now use the platform.")
     return redirect('accounts:verify_coordinators')
+
+
+@login_required
+@require_POST
+def decline_coordinator(request, pk):
+    """POST action: decline a pending coordinator — removes them from the org."""
+    user = request.user
+    if not user.is_coordinator() or not user.is_verified:
+        messages.error(request, "You do not have permission to decline coordinators.")
+        return redirect('tasks:task_list')
+
+    org = user.organization
+    if org is None or not org.is_verified:
+        messages.error(request, "Only coordinators of verified organizations can manage members.")
+        return redirect('tasks:task_list')
+
+    target = get_object_or_404(
+        User, pk=pk, organization=org, role=User.Role.COORDINATOR, is_verified=False
+    )
+    target.organization = None
+    target.save(update_fields=['organization'])
+    messages.warning(request, f"{target.username}'s request has been declined and they have been removed from the organisation.")
+    return redirect('accounts:verify_coordinators')
