@@ -41,7 +41,7 @@ class RegisterView(CreateView):
 
         user.save()
 
-        # Set created_by after user has a PK
+        # Встановлюємо created_by після того, як користувач отримав PK
         if user.role == User.Role.COORDINATOR and org_choice == ORG_NEW and new_org_name:
             user.organization.created_by = user
             user.organization.save(update_fields=['created_by'])
@@ -72,7 +72,7 @@ class CustomLoginView(LoginView):
 
 @login_required
 def pending_verification(request):
-    """Shown to coordinators who are not yet verified."""
+    """Відображається координаторам, які ще не верифіковані."""
     user = request.user
     if not user.is_coordinator():
         return redirect('tasks:task_list')
@@ -94,8 +94,8 @@ def pending_verification(request):
 @login_required
 def verify_coordinators(request):
     """
-    Verified coordinators of a verified organization can verify
-    other pending coordinators in their org.
+    Верифіковані координатори верифікованої організації можуть верифікувати
+    інших очікуючих координаторів у своїй організації.
     """
     user = request.user
     if not user.is_coordinator() or not user.is_verified:
@@ -120,9 +120,9 @@ def verify_coordinators(request):
 @login_required
 def delete_account(request):
     """
-    GET: show confirmation page.
-    POST: soft-delete the account (is_active=False + deleted_at timestamp).
-    All task history is preserved in the database.
+    GET: показує сторінку підтвердження.
+    POST: м'яке видалення акаунту (is_active=False + мітка часу deleted_at).
+    Вся історія завдань зберігається в базі даних.
     """
     if request.method == 'POST':
         user = request.user
@@ -247,7 +247,7 @@ def coordinator_org_leave(request):
 @login_required
 @require_POST
 def verify_coordinator(request, pk):
-    """POST action: verify a specific coordinator within the same org."""
+    """POST-дія: верифікує конкретного координатора в межах тієї самої організації."""
     user = request.user
     if not user.is_coordinator() or not user.is_verified:
         messages.error(request, "У вас немає дозволу верифікувати координаторів.")
@@ -270,7 +270,7 @@ def verify_coordinator(request, pk):
 @login_required
 @require_POST
 def decline_coordinator(request, pk):
-    """POST action: decline a pending coordinator — removes them from the org."""
+    """POST-дія: відхиляє очікуючого координатора — видаляє його з організації."""
     user = request.user
     if not user.is_coordinator() or not user.is_verified:
         messages.error(request, "У вас немає дозволу відхиляти координаторів.")
@@ -291,11 +291,11 @@ def decline_coordinator(request, pk):
 
 
 # ---------------------------------------------------------------------------
-# Admin panel views (superuser only)
+# Панель адміністратора (лише суперкористувач)
 # ---------------------------------------------------------------------------
 
 def _require_superuser(request):
-    """Return a redirect response if the user is not a superuser, else None."""
+    """Повертає редирект, якщо користувач не є суперкористувачем, інакше None."""
     if not request.user.is_superuser:
         return redirect('tasks:task_list')
     return None
@@ -416,7 +416,7 @@ def admin_delete_organization(request, pk):
 
     org = get_object_or_404(Organization, pk=pk)
     org_name = org.name
-    # Unverify coordinators who belonged to this org before SET_NULL fires
+    # Скасовуємо верифікацію координаторів цієї організації до спрацювання SET_NULL
     User.objects.filter(organization=org, role=User.Role.COORDINATOR).update(is_verified=False)
     org.delete()
     messages.success(request, f"Організацію '{org_name}' видалено.")

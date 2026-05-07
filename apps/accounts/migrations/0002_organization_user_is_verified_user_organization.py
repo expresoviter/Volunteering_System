@@ -4,7 +4,7 @@ from django.db import migrations, models
 
 
 def verify_existing_coordinators(apps, schema_editor):
-    """Set is_verified=True for all coordinators existing before this feature."""
+    """Встановлюється is_verified=True для всіх координаторів, що існували до додавання верифікації."""
     User = apps.get_model('accounts', 'User')
     User.objects.filter(role='coordinator').update(is_verified=True)
 

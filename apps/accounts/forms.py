@@ -65,11 +65,7 @@ class RegistrationForm(UserCreationForm):
         user = super().save(commit=False)
         user.email = self.cleaned_data['email']
         user.role = self.cleaned_data['role']
-        # Volunteers are auto-verified; coordinators wait for admin/org verification
-        if user.role == User.Role.VOLUNTEER:
-            user.is_verified = True
-        else:
-            user.is_verified = False
+        user.is_verified = user.role == User.Role.VOLUNTEER
         if commit:
             user.save()
         return user

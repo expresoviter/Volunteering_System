@@ -6,7 +6,7 @@
 
 <div class="row g-4">
 
-    <!-- Personal info -->
+    <!-- Особиста інформація -->
     <div class="col-12">
         <div class="card shadow-sm">
             <div class="card-header fw-semibold"><i class="bi bi-person-vcard"></i> Особиста інформація</div>
@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <!-- Personal stats -->
+    <!-- Особиста статистика -->
     <div class="col-lg-6">
         <div class="card shadow-sm h-100">
             <div class="card-header fw-semibold"><i class="bi bi-person"></i> Мої завдання</div>
@@ -65,7 +65,7 @@
         </div>
     </div>
 
-    <!-- Org stats -->
+    <!-- Статистика організації -->
     {% if org_stats %}
     <div class="col-lg-6">
         <div class="card shadow-sm h-100">
@@ -103,14 +103,14 @@
     </div>
     {% endif %}
 
-    <!-- Organisation management -->
+    <!-- Управління організацією -->
     <div class="col-12">
         <div class="card shadow-sm">
             <div class="card-header fw-semibold"><i class="bi bi-building-gear"></i> Організація</div>
             <div class="card-body">
 
                 {% if user.organization %}
-                <!-- Currently in an org — show leave option -->
+                <!-- Вже є членом організації — показати кнопку виходу -->
                 <p class="mb-1">
                     Ви є членом <strong>{{ user.organization.name }}</strong>
                     {% if user.organization.is_verified %}
@@ -129,7 +129,7 @@
                 </form>
 
                 {% else %}
-                <!-- No org — create or join -->
+                <!-- Без організації — створити або приєднатися -->
                 <div class="row g-4">
 
                     <div class="col-md-6">

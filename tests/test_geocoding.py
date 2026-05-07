@@ -1,5 +1,5 @@
 """
-Unit tests for the geocoding service (mocked — no real HTTP calls).
+Модульні тести для сервісу геокодування (з моками — без реальних HTTP-запитів).
 """
 from unittest.mock import patch, MagicMock
 import pytest

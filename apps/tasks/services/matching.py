@@ -1,36 +1,36 @@
 """
-Algorithmic Task-to-Volunteer Matching Module
-=============================================
-Uses the Hungarian algorithm (scipy.optimize.linear_sum_assignment) to compute
-the globally optimal assignment of volunteers to tasks, minimising total cost.
+Модуль алгоритмічного підбору завдань для волонтерів
 
-Cost function:
+Використовує угорський алгоритм (scipy.optimize.linear_sum_assignment) для обчислення
+глобально оптимального розподілу волонтерів по завданнях із мінімізацією загальної вартості.
+
+Функція вартості:
     C(i, j) = (w1 * distance_km(volunteer_i, task_j))
              - (w2 * priority(task_j))
              - (w3 * skill_match(volunteer_i, task_j))
              - (w4 * urgency(task_j))
 
-Where:
-    - w1 = MATCHING_WEIGHT_DISTANCE  (penalises distance)
-    - w2 = MATCHING_WEIGHT_PRIORITY  (rewards higher-priority tasks)
-    - w3 = MATCHING_WEIGHT_SKILLS    (rewards skill overlap)
-    - w4 = MATCHING_WEIGHT_URGENCY   (rewards tasks whose start date is soon)
-    - priority ∈ {1, 2, 3}           (Low, Medium, High)
-    - skill_match = number of skills the volunteer has that the task requires
-    - urgency ∈ [0.0, 1.0]           (1.0 = starts today or already started,
-                                       0.0 = starts ≥ URGENCY_HORIZON_DAYS away
-                                       or no start date set)
+Де:
+    - w1 = MATCHING_WEIGHT_DISTANCE  (штрафує за відстань)
+    - w2 = MATCHING_WEIGHT_PRIORITY  (нагороджує за вищий пріоритет завдання)
+    - w3 = MATCHING_WEIGHT_SKILLS    (нагороджує за збіг навичок)
+    - w4 = MATCHING_WEIGHT_URGENCY   (нагороджує завдання з близькою датою початку)
+    - priority - {1, 2, 3}           (Низький, Середній, Високий)
+    - skill_match = кількість навичок волонтера, які вимагає завдання
+    - urgency - [0.0, 1.0]           (1.0 = починається сьогодні або вже розпочате,
+                                       0.0 = починається через ≥ URGENCY_HORIZON_DAYS
+                                       або дата початку не задана)
 
-Ranking strategy (soft assignment):
-    1. Run the global Hungarian algorithm — the resulting assignment for this
-       volunteer becomes Rank 1 ("Top Pick"), the globally optimal choice.
-    2. Sort all tasks by this volunteer's individual cost row (ascending).
-       Rank 2 and Rank 3 are the two cheapest tasks that are not Rank 1.
-    3. Return the full sorted list so the view can order tasks from most to
-       least recommended.
+Стратегія ранжування (м'який розподіл):
+    1. Запускаємо глобальний угорський алгоритм — отриманий розподіл для цього
+       волонтера стає Рангом 1 («Найкращий вибір»), глобально оптимальним.
+    2. Сортуємо всі завдання за індивідуальним рядком вартості волонтера (за зростанням).
+       Ранг 2 та Ранг 3 — два найдешевших завдання, що не є Рангом 1.
+    3. Повертаємо повний відсортований список, щоб вигляд міг упорядкувати завдання
+       від найбільш до найменш рекомендованих.
 
-THESIS-NOTE: The result is used to tag and sort tasks in the UI rather than
-forcibly assigning them, preserving volunteer autonomy.
+Результат використовується для позначення та сортування завдань
+в інтерфейсі, а не для примусового призначення, і відповідно зберігає автономію волонтера.
 """
 
 import logging
@@ -44,7 +44,7 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Tasks starting within this many days are considered urgent.
+# Завдання, що починаються протягом цієї кількості днів, вважаються терміновими.
 URGENCY_HORIZON_DAYS = 14
 
 
@@ -71,17 +71,17 @@ class MatchResult(NamedTuple):
 
 
 def compute_distance_km(vol: VolunteerInput, task: TaskInput) -> float:
-    """Compute geodesic distance in kilometres between a volunteer and a task."""
+    """Обчислює геодезичну відстань у кілометрах між волонтером і завданням."""
     return geodesic((vol.latitude, vol.longitude), (task.latitude, task.longitude)).km
 
 
 def compute_urgency(start_date: date | None, today: date) -> float:
     """
-    Return an urgency score in [0.0, 1.0].
+    Повертає показник терміновості в діапазоні [0.0, 1.0].
 
-    1.0 — task starts today or has already started
-    0.0 — no start date, or start date is >= URGENCY_HORIZON_DAYS away
-    Linear interpolation in between.
+    1.0 — завдання починається сьогодні або вже розпочато
+    0.0 — дата початку не задана або >= URGENCY_HORIZON_DAYS
+    Лінійна інтерполяція між крайніми значеннями.
     """
     if start_date is None:
         return 0.0
@@ -103,7 +103,7 @@ def build_cost_matrix(
     today: date,
 ) -> np.ndarray:
     """
-    Build the N×M cost matrix where:
+    Будує матрицю вартостей N×M, де:
         C[i][j] = w1 * distance_km(volunteer_i, task_j)
                 - w2 * priority(task_j)
                 - w3 * skill_match(volunteer_i, task_j)
@@ -132,8 +132,8 @@ def run_matching(
     today: date | None = None,
 ) -> list[MatchResult]:
     """
-    Run the Hungarian algorithm to find the globally optimal volunteer-task pairs.
-    Returns a list of MatchResult named tuples.
+    Запускає угорський алгоритм для пошуку глобально оптимальних пар волонтер-завдання.
+    Повертає список іменованих кортежів MatchResult.
     """
     if not volunteers or not tasks:
         return []
@@ -167,19 +167,19 @@ def get_recommended_tasks_for_volunteer(
     volunteer_id: int,
     volunteer_lat: float,
     volunteer_lon: float,
-    open_tasks,                              # QuerySet / list of Task objects with coordinates
+    open_tasks,                              # QuerySet / список об'єктів Task з координатами
     volunteer_skill_ids: frozenset = frozenset(),
-    all_active_volunteers=None,             # optional list[VolunteerInput] for global optimisation
+    all_active_volunteers=None,             # необов'язковий list[VolunteerInput] для глобальної оптимізації
     today: date | None = None,
 ) -> list[int]:
     """
-    Return task IDs ordered from best to worst match for this volunteer.
+    Повертає ідентифікатори завдань, відсортовані від найкращого до найгіршого збігу для цього волонтера.
 
-    Rank 1  — globally optimal assignment from the Hungarian algorithm.
-    Rank 2+ — remaining tasks sorted by this volunteer's individual cost (ascending).
+    Ранг 1  — глобально оптимальний розподіл угорського алгоритму.
+    Ранг 2+ — решта завдань, відсортованих за індивідуальною вартістю волонтера (за зростанням).
 
-    The caller can take [:3] for the "Top Pick / 2nd Pick / 3rd Pick" badges and
-    use the full list to sort all tasks from most to least recommended.
+    Викликач може взяти [:3] для значків «Найкращий вибір / 2-й вибір / 3-й вибір» і
+    використати повний список для сортування всіх завдань від найбільш до найменш рекомендованих.
     """
     if today is None:
         today = date.today()
@@ -207,7 +207,7 @@ def get_recommended_tasks_for_volunteer(
 
     current_vol = VolunteerInput(volunteer_id, volunteer_lat, volunteer_lon, volunteer_skill_ids)
 
-    # Build personal cost row (1 volunteer × all tasks) for full ranking.
+    # Побудова персонального списку вартості для волонтера
     personal_costs = {}
     for task in tasks_with_coords:
         distance    = compute_distance_km(current_vol, task)
@@ -220,10 +220,10 @@ def get_recommended_tasks_for_volunteer(
             - w4 * urgency
         )
 
-    # Personal ranking: all tasks sorted by individual cost, best first.
+    # Персональний ранкінг: всі завдання відсортовані за індивідуальною вартістю
     personal_ranking = sorted(personal_costs.keys(), key=lambda tid: personal_costs[tid])
 
-    # Run global Hungarian to determine Rank 1 (globally optimal pick).
+    # Запускаємо глобальний угорський алгоритм.
     if all_active_volunteers:
         volunteers = list(all_active_volunteers)
         if not any(v.user_id == volunteer_id for v in volunteers):
@@ -236,7 +236,7 @@ def get_recommended_tasks_for_volunteer(
         (m.task_id for m in matches if m.volunteer_id == volunteer_id), None
     )
 
-    # Compose final ordered list: Hungarian pick first, then personal order.
+    # Створюємо остаточний впорядкований список: спочатку вибір угорського алгоритму, потім персональний порядок.
     if hungarian_pick and hungarian_pick in personal_costs:
         ordered = [hungarian_pick] + [tid for tid in personal_ranking if tid != hungarian_pick]
     else:

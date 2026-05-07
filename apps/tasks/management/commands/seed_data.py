@@ -1,7 +1,5 @@
 """
-Seed data management command.
-Generates demo organisations, coordinators, volunteers, and tasks
-located in Hallunda / southern Stockholm, Sweden.
+Наповнення БД тестовими даними.
 """
 import random
 from datetime import date, timedelta
@@ -13,9 +11,8 @@ from apps.volunteers.models import Skill, VolunteerProfile
 
 User = get_user_model()
 
-# Hallunda and surrounding neighbourhoods in Botkyrka / southern Stockholm
 HALLUNDA_LOCATIONS = [
-    # (name hint, lat, lon)
+    # (підказка назви, широта, довгота)
     ("Hallunda centrum",        59.2437, 17.8246),
     ("Norsborg",                59.2474, 17.8349),
     ("Alby",                    59.2520, 17.8455),
@@ -36,7 +33,7 @@ HALLUNDA_LOCATIONS = [
 TODAY = date.today()
 
 SAMPLE_TASKS = [
-    # (title, description, address, priority, status, volunteers_needed, org_key, archived, start_offset_days, duration_days)
+    # (назва, опис, адреса, пріоритет, статус, потрібно_волонтерів, ключ_організації, архівовано, зміщення_початку_в_днях, тривалість_в_днях)
     (
         "Food parcel delivery – Hallunda",
         "Deliver food parcels to elderly and low-income residents around Hallunda centrum. A car is required.",
@@ -154,7 +151,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Seeding database with Hallunda/Stockholm demo data...")
 
-        # ── Skills ─────────────────────────────────────────────────────────────
+        # ── Навички ────────────────────────────────────────────────────────────
         SKILL_DEFS = [
             ('medical',   'First Aid'),
             ('medical',   'CPR'),
@@ -186,14 +183,14 @@ class Command(BaseCommand):
             skill_objects[name] = obj
         self.stdout.write(self.style.SUCCESS(f"  Ensured {len(skill_objects)} skills"))
 
-        # ── Superuser / admin ──────────────────────────────────────────────────
+        # Суперкористувач / адмін
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser(
                 "admin", "admin@example.com", "admin123", role="coordinator"
             )
             self.stdout.write(self.style.SUCCESS("  Created superuser: admin / admin123"))
 
-        # ── Organisations ──────────────────────────────────────────────────────
+        # Організації
         admin_user = User.objects.get(username="admin")
 
         rk_org, _ = Organization.objects.get_or_create(
@@ -212,7 +209,7 @@ class Command(BaseCommand):
             fk_org.is_verified = True
             fk_org.save()
 
-        # Unverified org — exists but cannot post tasks
+        # Неверифікована організація — існує, але не може публікувати завдання
         Organization.objects.get_or_create(
             name="Stockholms Hjälpkår",
             defaults={"is_verified": False, "created_by": admin_user},
@@ -222,9 +219,9 @@ class Command(BaseCommand):
 
         ORG_MAP = {"rk": rk_org, "fk": fk_org}
 
-        # ── Coordinators ───────────────────────────────────────────────────────
+        # Координатори
         coordinators_data = [
-            # (username, password, first, last, org, is_verified)
+            # (логін, пароль, ім'я, прізвище, організація, is_verified)
             ("coord_rk",   "coord123", "Erik",    "Lindqvist",  rk_org, True),
             ("coord_fk",   "coord123", "Ingrid",  "Bergström",  fk_org, True),
             ("coord_ind",  "coord123", "Lars",    "Nilsson",    None,   True),
@@ -242,7 +239,7 @@ class Command(BaseCommand):
                 u = User.objects.get(username=username)
             coord_objects[username] = u
 
-        # ── Volunteers ─────────────────────────────────────────────────────────
+        # Волонтери
         volunteers_data = [
             ("vol_anna",   "vol123", "Anna",    "Karlsson"),
             ("vol_ole",    "vol123", "Johan",   "Svensson"),
@@ -266,7 +263,7 @@ class Command(BaseCommand):
                 profile.save()
                 self.stdout.write(self.style.SUCCESS(f"  Created volunteer: {username} / {password}"))
 
-        # ── Tasks ──────────────────────────────────────────────────────────────
+        # Завдання
         COORD_FOR_ORG = {
             "rk":  coord_objects["coord_rk"],
             "fk":  coord_objects["coord_fk"],

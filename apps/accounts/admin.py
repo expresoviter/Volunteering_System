@@ -39,8 +39,8 @@ class CustomUserAdmin(UserAdmin):
     actions = ['verify_coordinators', 'restore_accounts']
 
     def get_queryset(self, request):
-        # Show all users including soft-deleted ones in admin
-        return super().get_queryset(request).filter()
+        # Показуємо всіх користувачів, включно з «м'яко видаленими», в адмінці
+        return super().get_queryset(request)
 
     @admin.action(description='Verify selected coordinators')
     def verify_coordinators(self, request, queryset):

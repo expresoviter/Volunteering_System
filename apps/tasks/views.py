@@ -12,7 +12,7 @@ from geopy.distance import geodesic
 
 from .forms import TaskForm
 from .models import Task
-from .services.geocoding import geocode_address, geocode_address_full
+from .services.geocoding import geocode_address_full
 
 _ALLOWED_COUNTRY_CODES = {'ua', 'se', 'no'}
 _COUNTRY_CODE_NAMES = {'ua': 'Ukraine', 'se': 'Sweden', 'no': 'Norway'}
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _skills_context(request, task):
-    """Return skills_by_category and selected_skill_ids for the task form."""
+    """Повертає skills_by_category та selected_skill_ids для форми завдання."""
     skills_by_category = {}
     for skill in Skill.objects.order_by('category', 'name'):
         skills_by_category.setdefault(skill.get_category_display(), []).append(skill)
@@ -40,7 +40,7 @@ def _skills_context(request, task):
 
 
 def _build_org_filter(selected_orgs, user):
-    """Return a Q object for the selected org filter values, or None if no filter."""
+    """Повертає Q-об'єкт для вибраних значень фільтра організацій або None, якщо фільтр не задано."""
     if not selected_orgs:
         return None
     q = Q()
@@ -58,12 +58,44 @@ def _build_org_filter(selected_orgs, user):
     return q if has_condition else None
 
 
+def _apply_geocoding(form, task, post):
+    """Геокодує адресу завдання, встановлює координати і перевіряє країну.
+    Повертає True, якщо адреса дійсна; False і додає помилку форми — інакше."""
+    try:
+        lat = float(post['_coord_lat'])
+        lon = float(post['_coord_lon'])
+        geo = geocode_address_full(task.address)
+        task.latitude  = lat
+        task.longitude = lon
+    except (KeyError, ValueError):
+        geo = geocode_address_full(task.address)
+        task.latitude  = geo['lat']
+        task.longitude = geo['lon']
+
+    country_code = (geo.get('country_code') or '').lower()
+    if country_code not in _ALLOWED_COUNTRY_CODES:
+        form.add_error(
+            'address',
+            "Завдання можна створювати лише в Україні, Швеції або Норвегії. "
+            "Введіть адресу в одній з цих країн."
+        )
+        return False
+    return True
+
+
+def _revert_to_open_if_empty(task):
+    """Повертає статус завдання до OPEN, якщо не залишилось призначених волонтерів."""
+    if task.assigned_volunteers.count() == 0:
+        task.status = Task.Status.OPEN
+        task.save(update_fields=['status', 'updated_at'])
+
+
 @login_required
 def task_list(request):
     """
-    Main task list / map view.
-    For volunteers: shows nearby tasks with Hungarian-algorithm recommendations.
-    For coordinators: shows all tasks (filtered by org by default).
+    Головний список завдань / вигляд на карті.
+    Для волонтерів: показує найближчі завдання з рекомендаціями угорського алгоритму.
+    Для координаторів: показує всі завдання (за замовчуванням відфільтровані за організацією).
     """
     user = request.user
     volunteer_lat = request.session.get('volunteer_lat')
@@ -71,20 +103,20 @@ def task_list(request):
 
     verified_orgs = Organization.objects.filter(is_verified=True)
 
-    # Determine selected org filters.
-    # 'filter_applied' sentinel distinguishes a submitted form from a first load.
+    # Визначаємо вибрані фільтри організацій.
+    # Сигнальний параметр 'filter_applied' відрізняє надіслану форму від першого завантаження.
     filter_applied = 'filter_applied' in request.GET
     if filter_applied:
         selected_orgs = request.GET.getlist('org')
     else:
-        # Apply role-based defaults on first load
+        # Застосовуємо стандартні значення на основі ролі при першому завантаженні
         if user.is_coordinator():
             if user.organization and user.organization.is_verified:
                 selected_orgs = [str(user.organization_id)]
             else:
                 selected_orgs = ['mine']
         else:
-            selected_orgs = []  # volunteers/admins: show all
+            selected_orgs = []  # волонтери/адміни: показувати все
 
     org_q = _build_org_filter(selected_orgs, user)
 
@@ -97,19 +129,20 @@ def task_list(request):
         tasks = base_qs.prefetch_related(*prefetch)
         recommended_ids = {}
     else:
-        # Volunteer view: filter by radius if location is known
+        # Вигляд для волонтера: фільтрація за радіусом, якщо відома локація
+        open_tasks_base = Task.objects.annotate(
+            accepted_count=Count('assigned_volunteers')
+        ).filter(
+            status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
+            is_archived=False,
+            accepted_count__lt=F('volunteers_needed'),
+        )
         if volunteer_lat and volunteer_lon:
             try:
                 radius_km = max(1.0, min(100.0, float(request.GET.get('radius', settings.TASK_RADIUS_KM))))
             except (ValueError, TypeError):
                 radius_km = settings.TASK_RADIUS_KM
-            open_tasks_qs = Task.objects.annotate(
-                accepted_count=Count('assigned_volunteers')
-            ).filter(
-                status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
-                is_archived=False,
-                accepted_count__lt=F('volunteers_needed'),
-            )
+            open_tasks_qs = open_tasks_base
             if org_q is not None:
                 open_tasks_qs = open_tasks_qs.filter(org_q)
             nearby_tasks = []
@@ -139,9 +172,9 @@ def task_list(request):
                 open_tasks=nearby_tasks,
                 volunteer_skill_ids=volunteer_skill_ids,
             )
-            # Top 3 get a badge; dict maps task_id → rank (1, 2, 3)
+            # Топ-3 отримують значок; словник відображає task_id - ранг (1, 2, 3)
             recommended_ids = {tid: rank for rank, tid in enumerate(ranked_ids[:3], start=1)}
-            # Sort all tasks: recommended first (by rank), then by cost position
+            # Сортуємо всі завдання: рекомендовані першими (за рангом), потім за вартістю
             rank_position = {tid: pos for pos, tid in enumerate(ranked_ids)}
             tasks = sorted(
                 tasks,
@@ -149,13 +182,7 @@ def task_list(request):
             )
         else:
             radius_km = float(settings.TASK_RADIUS_KM)
-            base_qs = Task.objects.annotate(
-                accepted_count=Count('assigned_volunteers')
-            ).filter(
-                status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
-                is_archived=False,
-                accepted_count__lt=F('volunteers_needed'),
-            )
+            base_qs = open_tasks_base
             if org_q is not None:
                 base_qs = base_qs.filter(org_q)
             tasks = base_qs.prefetch_related(*prefetch)
@@ -164,13 +191,13 @@ def task_list(request):
     if user.is_coordinator() or user.is_superuser:
         radius_km = float(settings.TASK_RADIUS_KM)
 
-    # Annotate each task with its recommendation rank (0 = not recommended).
-    # Ensures task.recommendation_rank is always available in the template.
+    # Анотуємо кожне завдання його рангом рекомендації (0 = не рекомендовано).
+    # Гарантує, що task.recommendation_rank завжди доступний у шаблоні.
     rank_lookup = recommended_ids if isinstance(recommended_ids, dict) else {}
     for task in tasks:
         task.recommendation_rank = rank_lookup.get(task.id, 0)
 
-    # Build GeoJSON for map markers
+    # Формуємо GeoJSON для маркерів на карті
     features = []
     for task in tasks:
         if task.has_coordinates:
@@ -232,25 +259,7 @@ def task_create(request):
         if form.is_valid():
             task = form.save(commit=False)
             task.created_by = request.user
-            try:
-                lat = float(request.POST['_coord_lat'])
-                lon = float(request.POST['_coord_lon'])
-                geo = geocode_address_full(task.address)
-                task.latitude  = lat
-                task.longitude = lon
-            except (KeyError, ValueError):
-                geo = geocode_address_full(task.address)
-                task.latitude  = geo['lat']
-                task.longitude = geo['lon']
-
-            country_code = (geo.get('country_code') or '').lower()
-            if country_code not in _ALLOWED_COUNTRY_CODES:
-                form.add_error(
-                    'address',
-                    "Завдання можна створювати лише в Україні, Швеції або Норвегії. "
-                    "Введіть адресу в одній з цих країн."
-                )
-            else:
+            if _apply_geocoding(form, task, request.POST):
                 task.save()
                 task.required_skills.set(
                     Skill.objects.filter(id__in=request.POST.getlist('required_skills'))
@@ -294,25 +303,7 @@ def task_edit(request, pk):
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             task = form.save(commit=False)
-            try:
-                lat = float(request.POST['_coord_lat'])
-                lon = float(request.POST['_coord_lon'])
-                geo = geocode_address_full(task.address)
-                task.latitude  = lat
-                task.longitude = lon
-            except (KeyError, ValueError):
-                geo = geocode_address_full(task.address)
-                task.latitude  = geo['lat']
-                task.longitude = geo['lon']
-
-            country_code = (geo.get('country_code') or '').lower()
-            if country_code not in _ALLOWED_COUNTRY_CODES:
-                form.add_error(
-                    'address',
-                    "Завдання можна створювати лише в Україні, Швеції або Норвегії. "
-                    "Введіть адресу в одній з цих країн."
-                )
-            else:
+            if _apply_geocoding(form, task, request.POST):
                 task.save()
                 task.required_skills.set(
                     Skill.objects.filter(id__in=request.POST.getlist('required_skills'))
@@ -376,7 +367,7 @@ def task_archive_list(request):
         if org_q is not None:
             base_qs = base_qs.filter(org_q)
     else:
-        # Coordinators: scoped to their own tasks or their org's tasks — no filter UI needed
+        # Координатори бачать лише завдання, створені ними або їхньою організацією. Фільтр не показує, але все одно застосовуємо його для консистентності.
         selected_orgs = []
         if user.organization and user.organization.is_verified:
             base_qs = Task.objects.filter(
@@ -398,7 +389,7 @@ def task_archive_list(request):
 @login_required
 @require_POST
 def task_accept(request, pk):
-    """Volunteer accepts an open task — added to assigned_volunteers."""
+    """Волонтер приймає відкрите завдання — додається до assigned_volunteers."""
     task = get_object_or_404(Task, pk=pk)
     if not request.user.is_volunteer():
         messages.error(request, "Лише волонтери можуть брати завдання.")
@@ -424,7 +415,7 @@ def task_accept(request, pk):
 @login_required
 @require_POST
 def task_unaccept(request, pk):
-    """Volunteer withdraws their acceptance of a task."""
+    """Волонтер відмовляється від прийнятого завдання."""
     task = get_object_or_404(Task, pk=pk)
     if not request.user.is_volunteer():
         messages.error(request, "Лише волонтери можуть відмовлятися від завдань.")
@@ -437,10 +428,7 @@ def task_unaccept(request, pk):
         return redirect('tasks:task_detail', pk=pk)
 
     task.assigned_volunteers.remove(request.user)
-    if task.assigned_volunteers.count() == 0:
-        task.status = Task.Status.OPEN
-        task.save(update_fields=['status', 'updated_at'])
-
+    _revert_to_open_if_empty(task)
     messages.success(request, f"Ви відмовилися від завдання '{task.title}'.")
     return redirect('tasks:task_detail', pk=pk)
 
@@ -448,7 +436,7 @@ def task_unaccept(request, pk):
 @login_required
 @require_POST
 def task_complete(request, pk):
-    """Mark a task as Completed. Only coordinators can do this."""
+    """Позначає завдання як завершене. Лише координатори можуть це зробити."""
     task = get_object_or_404(Task, pk=pk)
     user = request.user
     if not (user.is_coordinator() or user.is_superuser):
@@ -472,7 +460,7 @@ def task_complete(request, pk):
 @login_required
 @require_POST
 def task_remove_volunteer(request, pk, vol_id):
-    """Coordinator removes a specific volunteer from a task."""
+    """Координатор видаляє конкретного волонтера із завдання."""
     task = get_object_or_404(Task, pk=pk)
     if not (request.user.is_coordinator() or request.user.is_superuser):
         messages.error(request, "Лише координатори можуть видаляти волонтерів.")
@@ -486,9 +474,7 @@ def task_remove_volunteer(request, pk, vol_id):
 
     volunteer = get_object_or_404(task.assigned_volunteers, pk=vol_id)
     task.assigned_volunteers.remove(volunteer)
-    if task.assigned_volunteers.count() == 0:
-        task.status = Task.Status.OPEN
-        task.save(update_fields=['status', 'updated_at'])
+    _revert_to_open_if_empty(task)
     messages.success(request, f"{volunteer.username} видалено із завдання.")
     return redirect('tasks:task_detail', pk=pk)
 
@@ -496,7 +482,7 @@ def task_remove_volunteer(request, pk, vol_id):
 @login_required
 @require_POST
 def update_location(request):
-    """API endpoint: volunteer POSTs their current GPS coords → stored in session."""
+    """API-ендпоінт: волонтер надсилає поточні GPS-координати, вони зберігаються в сесії."""
     try:
         data = json.loads(request.body)
         lat = float(data['latitude'])
@@ -521,7 +507,7 @@ def update_location(request):
 
 @login_required
 def tasks_geojson(request):
-    """API endpoint returning all map-visible tasks as GeoJSON."""
+    """API-ендпоінт, що повертає всі видимі на карті завдання у форматі GeoJSON."""
     tasks = Task.objects.filter(is_archived=False).exclude(latitude=None).prefetch_related('assigned_volunteers', 'created_by')
     features = []
     for task in tasks:

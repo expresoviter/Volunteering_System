@@ -18,7 +18,7 @@ class Organization(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
-        # When an org is first verified, auto-verify all its coordinator members
+        # Коли організацію вперше верифіковано, автоматично верифікуємо всіх координаторів-членів
         if self.pk:
             try:
                 old = Organization.objects.get(pk=self.pk)
@@ -57,11 +57,11 @@ class User(AbstractUser):
         return self.role == self.Role.COORDINATOR
 
     def can_work(self):
-        """Returns True if the user has full platform access."""
+        """Повертає True, якщо користувач має повний доступ до платформи."""
         return self.is_volunteer() or self.is_verified or self.is_superuser
 
     def can_manage_task(self, task):
-        """Returns True if this coordinator (or superuser) may edit/delete the given task."""
+        """Повертає True, якщо цей координатор (або суперкористувач) може редагувати/видаляти вказане завдання."""
         if self.is_superuser:
             return True
         if not self.is_coordinator():
