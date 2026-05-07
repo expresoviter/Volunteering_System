@@ -56,5 +56,5 @@ Thumbs.db
 *.gif
 *.bmp
 
-# Static collected files (if using collectstatic)
-staticfiles/
+# Static collected files — intentionally tracked for Vercel deployment
+# staticfiles/

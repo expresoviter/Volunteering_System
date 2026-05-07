@@ -4,13 +4,13 @@ from django.conf import settings
 
 class Skill(models.Model):
     CATEGORIES = [
-        ('medical',   'Medical'),
-        ('transport', 'Transport'),
-        ('physical',  'Physical'),
-        ('practical', 'Practical'),
-        ('technical', 'Technical'),
-        ('social',    'Social'),
-        ('language',  'Language'),
+        ('medical',   'Медичне'),
+        ('transport', 'Транспорт'),
+        ('physical',  'Фізичне'),
+        ('practical', 'Практичне'),
+        ('technical', 'Технічне'),
+        ('social',    'Соціальне'),
+        ('language',  'Мова'),
     ]
     name     = models.CharField(max_length=100, unique=True)
     category = models.CharField(max_length=50, choices=CATEGORIES)

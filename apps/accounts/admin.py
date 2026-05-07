@@ -13,14 +13,14 @@ class OrganizationAdmin(admin.ModelAdmin):
 
     def member_count(self, obj):
         return obj.members.filter(role='coordinator').count()
-    member_count.short_description = 'Coordinators'
+    member_count.short_description = 'Координатори'
 
-    @admin.action(description='Verify selected organizations (and all their coordinators)')
+    @admin.action(description='Верифікувати вибрані організації (та всіх їхніх координаторів)')
     def verify_organizations(self, request, queryset):
         for org in queryset:
             org.is_verified = True
             org.save()
-        self.message_user(request, f"{queryset.count()} organization(s) verified.")
+        self.message_user(request, f"{queryset.count()} організацію(й) верифіковано.")
 
 
 @admin.register(User)
@@ -30,11 +30,11 @@ class CustomUserAdmin(UserAdmin):
     list_editable = ('is_verified',)
     readonly_fields = ('deleted_at',)
     fieldsets = UserAdmin.fieldsets + (
-        ('Role & Organization', {'fields': ('role', 'organization', 'is_verified')}),
-        ('Deletion', {'fields': ('deleted_at',)}),
+        ('Роль та організація', {'fields': ('role', 'organization', 'is_verified')}),
+        ('Видалення', {'fields': ('deleted_at',)}),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Role & Organization', {'fields': ('role', 'organization', 'is_verified')}),
+        ('Роль та організація', {'fields': ('role', 'organization', 'is_verified')}),
     )
     actions = ['verify_coordinators', 'restore_accounts']
 
@@ -42,12 +42,12 @@ class CustomUserAdmin(UserAdmin):
         # Показуємо всіх користувачів, включно з «м'яко видаленими», в адмінці
         return super().get_queryset(request)
 
-    @admin.action(description='Verify selected coordinators')
+    @admin.action(description='Верифікувати вибраних координаторів')
     def verify_coordinators(self, request, queryset):
         updated = queryset.filter(role='coordinator').update(is_verified=True)
-        self.message_user(request, f"{updated} coordinator(s) verified.")
+        self.message_user(request, f"{updated} координатора(ів) верифіковано.")
 
-    @admin.action(description='Restore selected deleted accounts')
+    @admin.action(description='Відновити вибрані видалені акаунти')
     def restore_accounts(self, request, queryset):
         updated = queryset.update(is_active=True, deleted_at=None)
-        self.message_user(request, f"{updated} account(s) restored.")
+        self.message_user(request, f"{updated} акаунт(ів) відновлено.")

@@ -36,7 +36,7 @@ class RegistrationForm(UserCreationForm):
         for org in Organization.objects.order_by('name'):
             label = org.name
             if org.is_verified:
-                label += ' (verified)'
+                label += ' (верифікована)'
             choices.append((str(org.pk), label))
         self.fields['organization_choice'].choices = choices
 

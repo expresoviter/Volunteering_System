@@ -353,7 +353,7 @@ def task_archive_list(request):
         messages.error(request, "Лише координатори можуть переглядати архів.")
         return redirect('tasks:task_list')
     if not user.is_superuser and not user.can_work():
-        messages.warning(request, "Your account is pending verification.")
+        messages.warning(request, "Ваш акаунт очікує верифікації.")
         return redirect('accounts:pending_verification')
 
     verified_orgs = Organization.objects.filter(is_verified=True)
