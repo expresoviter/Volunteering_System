@@ -4,14 +4,14 @@ from django.conf import settings
 
 class Task(models.Model):
     class Status(models.TextChoices):
-        OPEN = 'open', 'Open'
-        IN_PROGRESS = 'in_progress', 'In Progress'
-        COMPLETED = 'completed', 'Completed'
+        OPEN = 'open', 'Відкрите'
+        IN_PROGRESS = 'in_progress', 'В процесі'
+        COMPLETED = 'completed', 'Завершене'
 
     class Priority(models.IntegerChoices):
-        LOW = 1, 'Low'
-        MEDIUM = 2, 'Medium'
-        HIGH = 3, 'High (Urgent)'
+        LOW = 1, 'Низький'
+        MEDIUM = 2, 'Середній'
+        HIGH = 3, 'Високий (Терміново)'
 
     title = models.CharField(max_length=200)
     description = models.TextField()

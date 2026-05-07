@@ -7,17 +7,17 @@ ORG_NEW = '__new__'
 
 
 class RegistrationForm(UserCreationForm):
-    email = forms.EmailField(required=True)
-    role = forms.ChoiceField(choices=User.Role.choices)
+    email = forms.EmailField(required=True, label="Електронна пошта")
+    role = forms.ChoiceField(choices=User.Role.choices, label="Роль")
     organization_choice = forms.ChoiceField(
         required=False,
-        label='Organization',
+        label='Організація',
     )
     new_organization_name = forms.CharField(
         max_length=255,
         required=False,
-        label='New organization name',
-        help_text='Enter the exact name of your NGO or company.',
+        label='Назва нової організації',
+        help_text='Введіть точну назву вашої НГО або компанії.',
     )
 
     class Meta:
@@ -26,9 +26,12 @@ class RegistrationForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['username'].label = "Ім'я користувача"
+        self.fields['password1'].label = "Пароль"
+        self.fields['password2'].label = "Підтвердження паролю"
         choices = [
-            (ORG_NONE, '— No organization —'),
-            (ORG_NEW, '+ Create new organization'),
+            (ORG_NONE, '— Без організації —'),
+            (ORG_NEW, '+ Створити нову організацію'),
         ]
         for org in Organization.objects.order_by('name'):
             label = org.name
@@ -41,7 +44,7 @@ class RegistrationForm(UserCreationForm):
         cleaned_data = super().clean()
         email = cleaned_data.get('email')
         if email and User.objects.filter(email__iexact=email).exists():
-            self.add_error('email', 'A user with this email address already exists.')
+            self.add_error('email', 'Користувач з такою електронною адресою вже існує.')
 
         role = cleaned_data.get('role')
         org_choice = cleaned_data.get('organization_choice', ORG_NONE)
@@ -49,11 +52,11 @@ class RegistrationForm(UserCreationForm):
 
         if role == User.Role.COORDINATOR and org_choice == ORG_NEW:
             if not new_org_name:
-                self.add_error('new_organization_name', 'Please enter an organization name.')
+                self.add_error('new_organization_name', 'Будь ласка, введіть назву організації.')
             elif Organization.objects.filter(name__iexact=new_org_name).exists():
                 self.add_error(
                     'new_organization_name',
-                    'An organization with this name already exists. Please select it from the list.',
+                    'Організація з такою назвою вже існує. Будь ласка, оберіть її зі списку.',
                 )
 
         return cleaned_data

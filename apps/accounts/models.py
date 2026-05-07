@@ -33,8 +33,8 @@ class Organization(models.Model):
 
 class User(AbstractUser):
     class Role(models.TextChoices):
-        VOLUNTEER = 'volunteer', 'Volunteer'
-        COORDINATOR = 'coordinator', 'Coordinator'
+        VOLUNTEER = 'volunteer', 'Волонтер'
+        COORDINATOR = 'coordinator', 'Координатор'
 
     email = models.EmailField(unique=True)
 
@@ -61,7 +61,9 @@ class User(AbstractUser):
         return self.is_volunteer() or self.is_verified or self.is_superuser
 
     def can_manage_task(self, task):
-        """Returns True if this coordinator may edit/delete the given task."""
+        """Returns True if this coordinator (or superuser) may edit/delete the given task."""
+        if self.is_superuser:
+            return True
         if not self.is_coordinator():
             return False
         if self.organization and self.organization.is_verified:

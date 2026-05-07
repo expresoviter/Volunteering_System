@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Verify Coordinators — VolunteerCoord{% endblock %}
+{% block title %}Верифікація координаторів — VolunteerCoord{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-person-check"></i> Verify Coordinators</h2>
+    <h2><i class="bi bi-person-check"></i> Верифікація координаторів</h2>
     <span class="badge bg-success fs-6"><i class="bi bi-building"></i> {{ org.name }}</span>
 </div>
 
 {% if pending %}
     <p class="text-muted">
-        The following coordinators have joined <strong>{{ org.name }}</strong> and are waiting for verification.
+        Наступні координатори приєдналися до <strong>{{ org.name }}</strong> та очікують верифікації.
     </p>
     <div class="row row-cols-1 row-cols-md-2 g-3">
         {% for coordinator in pending %}
@@ -25,20 +25,20 @@
                         {% endif %}
                         <p class="text-muted small mb-3">
                             <i class="bi bi-calendar3"></i>
-                            Registered {{ coordinator.date_joined|date:"d M Y" }}
+                            Зареєстровано {{ coordinator.date_joined|date:"d M Y" }}
                         </p>
                         <div class="d-flex gap-2">
                             <form method="post" action="{% url 'accounts:verify_coordinator' coordinator.pk %}" class="flex-fill">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-success btn-sm w-100">
-                                    <i class="bi bi-check-circle"></i> Verify
+                                    <i class="bi bi-check-circle"></i> Верифікувати
                                 </button>
                             </form>
                             <form method="post" action="{% url 'accounts:decline_coordinator' coordinator.pk %}" class="flex-fill"
-                                  onsubmit="return confirm('Decline {{ coordinator.username }}? They will be removed from the organisation.')">
+                                  onsubmit="return confirm('Відхилити {{ coordinator.username }}? Їх буде видалено з організації.')">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-                                    <i class="bi bi-x-circle"></i> Decline
+                                    <i class="bi bi-x-circle"></i> Відхилити
                                 </button>
                             </form>
                         </div>
@@ -50,7 +50,7 @@
 {% else %}
     <div class="alert alert-success">
         <i class="bi bi-check-circle"></i>
-        All coordinators in <strong>{{ org.name }}</strong> are verified. No pending requests.
+        Всі координатори в <strong>{{ org.name }}</strong> верифіковані. Немає запитів в очікуванні.
     </div>
 {% endif %}
 {% endblock %}

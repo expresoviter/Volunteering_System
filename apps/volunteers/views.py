@@ -12,6 +12,14 @@ def profile(request):
         return redirect('tasks:task_list')
 
     user = request.user
+
+    if request.method == 'POST':
+        user.first_name = request.POST.get('first_name', '').strip()
+        user.last_name = request.POST.get('last_name', '').strip()
+        user.save(update_fields=['first_name', 'last_name'])
+        messages.success(request, "Ім'я оновлено.")
+        return redirect('volunteers:profile')
+
     active_task = Task.objects.filter(
         assigned_volunteers=user,
         status=Task.Status.IN_PROGRESS,
@@ -47,7 +55,7 @@ def profile_edit(request):
     if request.method == 'POST':
         selected_ids = request.POST.getlist('skills')
         profile_obj.skills.set(Skill.objects.filter(id__in=selected_ids))
-        messages.success(request, "Your skills have been updated.")
+        messages.success(request, "Ваші навички оновлено.")
         return redirect('volunteers:profile')
 
     selected_skill_ids = set(str(i) for i in profile_obj.skills.values_list('id', flat=True))

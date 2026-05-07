@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -30,18 +30,21 @@
         </button>
         <div class="collapse navbar-collapse" id="navMenu">
             <ul class="navbar-nav me-auto">
-                <li class="nav-item"><a class="nav-link" href="/tasks/"><i class="bi bi-list-task"></i> Tasks</a></li>
+                <li class="nav-item"><a class="nav-link" href="/tasks/"><i class="bi bi-list-task"></i> Завдання</a></li>
                 {% if user.is_authenticated %}
-                    {% if user.role == 'coordinator' %}
-                        <li class="nav-item"><a class="nav-link" href="/accounts/coordinator/profile/"><i class="bi bi-person"></i> My Profile</a></li>
+                    {% if user.is_superuser %}
+                        <li class="nav-item"><a class="nav-link" href="/accounts/admin-panel/"><i class="bi bi-shield-lock"></i> Панель адміністратора</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> Нове завдання</a></li>
+                    {% elif user.role == 'coordinator' %}
+                        <li class="nav-item"><a class="nav-link" href="/accounts/coordinator/profile/"><i class="bi bi-person"></i> Мій профіль</a></li>
                         {% if user.is_verified %}
-                            <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> New Task</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/tasks/create/"><i class="bi bi-plus-circle"></i> Нове завдання</a></li>
                             {% if user.organization and user.organization.is_verified %}
-                                <li class="nav-item"><a class="nav-link" href="/accounts/verify-coordinators/"><i class="bi bi-person-check"></i> Verify Members</a></li>
+                                <li class="nav-item"><a class="nav-link" href="/accounts/verify-coordinators/"><i class="bi bi-person-check"></i> Верифікувати учасників</a></li>
                             {% endif %}
                         {% endif %}
                     {% else %}
-                        <li class="nav-item"><a class="nav-link" href="/volunteers/profile/"><i class="bi bi-person"></i> My Profile</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/volunteers/profile/"><i class="bi bi-person"></i> Мій профіль</a></li>
                     {% endif %}
                 {% endif %}
             </ul>
@@ -51,8 +54,8 @@
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-person-circle"></i> {{ user.username }}
                             <span class="badge bg-light text-primary ms-1">{{ user.get_role_display }}</span>
-                            {% if user.role == 'coordinator' and not user.is_verified %}
-                                <span class="badge bg-warning text-dark ms-1">Pending</span>
+                            {% if user.role == 'coordinator' and not user.is_verified and not user.is_superuser %}
+                                <span class="badge bg-warning text-dark ms-1">Очікує</span>
                             {% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
@@ -67,7 +70,7 @@
                             {% endif %}
                             <li>
                                 <a href="/accounts/delete/" class="dropdown-item text-danger">
-                                    <i class="bi bi-trash3"></i> Delete Account
+                                    <i class="bi bi-trash3"></i> Видалити акаунт
                                 </a>
                             </li>
                             <li><hr class="dropdown-divider"></li>
@@ -75,15 +78,15 @@
                                 <form method="post" action="/accounts/logout/" style="display:inline;">
                                     {% csrf_token %}
                                     <button type="submit" class="dropdown-item">
-                                        <i class="bi bi-box-arrow-right"></i> Logout
+                                        <i class="bi bi-box-arrow-right"></i> Вийти
                                     </button>
                                 </form>
                             </li>
                         </ul>
                     </li>
                 {% else %}
-                    <li class="nav-item"><a class="nav-link" href="/accounts/login/">Login</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/accounts/register/">Register</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/accounts/login/">Увійти</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/accounts/register/">Зареєструватися</a></li>
                 {% endif %}
             </ul>
         </div>
@@ -91,12 +94,12 @@
 </nav>
 
 <div class="container mt-4">
-    {% if user.is_authenticated and user.role == 'coordinator' and not user.is_verified %}
+    {% if user.is_authenticated and user.role == 'coordinator' and not user.is_verified and not user.is_superuser %}
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <i class="bi bi-hourglass-split"></i>
-            <strong>Account pending verification.</strong>
-            You can browse tasks, but you won't be able to create or manage them until an admin or a verified organization coordinator approves your account.
-            <a href="/accounts/pending-verification/" class="alert-link">Learn more</a>
+            <strong>Акаунт очікує верифікації.</strong>
+            Ви можете переглядати завдання, але не зможете створювати або керувати ними, доки адміністратор або верифікований координатор організації не підтвердить ваш акаунт.
+            <a href="/accounts/pending-verification/" class="alert-link">Дізнатися більше</a>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     {% endif %}

@@ -7,6 +7,15 @@ class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
         fields = ('title', 'description', 'address', 'priority', 'volunteers_needed', 'start_date', 'end_date')
+        labels = {
+            'title': 'Назва',
+            'description': 'Опис',
+            'address': 'Адреса',
+            'priority': 'Пріоритет',
+            'volunteers_needed': 'Потрібно волонтерів',
+            'start_date': 'Дата початку',
+            'end_date': 'Дата завершення',
+        }
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4}),
             'volunteers_needed': forms.NumberInput(attrs={'min': 1, 'max': 100}),

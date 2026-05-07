@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Register — VolunteerCoord{% endblock %}
+{% block title %}Реєстрація — VolunteerCoord{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6">
         <div class="card shadow-sm">
             <div class="card-body p-4">
-                <h3 class="card-title mb-4"><i class="bi bi-person-plus"></i> Create Account</h3>
+                <h3 class="card-title mb-4"><i class="bi bi-person-plus"></i> Створити акаунт</h3>
                 <form method="post" id="register-form">
                     {% csrf_token %}
                     {% for field in form %}
@@ -40,7 +40,7 @@
 
                     {# Organization section — shown only for coordinators #}
                     <div id="org-section" style="display:none;" class="border rounded p-3 mb-3 bg-light">
-                        <h6 class="mb-3"><i class="bi bi-building"></i> Organization</h6>
+                        <h6 class="mb-3"><i class="bi bi-building"></i> Організація</h6>
 
                         <div class="mb-3">
                             <label class="form-label fw-semibold">{{ form.organization_choice.label }}</label>
@@ -66,7 +66,7 @@
                                    id="id_new_organization_name"
                                    class="form-control {% if form.new_organization_name.errors %}is-invalid{% endif %}"
                                    {% if form.new_organization_name.value %}value="{{ form.new_organization_name.value }}"{% endif %}
-                                   placeholder="e.g. Kyiv Volunteer Foundation">
+                                   placeholder="напр. Київський волонтерський фонд">
                             {% if form.new_organization_name.help_text %}
                                 <div class="form-text text-muted">{{ form.new_organization_name.help_text }}</div>
                             {% endif %}
@@ -77,14 +77,14 @@
 
                         <div class="form-text text-muted">
                             <i class="bi bi-info-circle"></i>
-                            After registration, your account will need to be verified before you can create or manage tasks.
+                            Після реєстрації ваш акаунт потребує верифікації перед тим, як ви зможете створювати або керувати завданнями.
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-success w-100">Register</button>
+                    <button type="submit" class="btn btn-success w-100">Зареєструватися</button>
                 </form>
                 <hr>
-                <p class="text-center mb-0">Already have an account? <a href="/accounts/login/">Login</a></p>
+                <p class="text-center mb-0">Вже є акаунт? <a href="/accounts/login/">Увійти</a></p>
             </div>
         </div>
     </div>

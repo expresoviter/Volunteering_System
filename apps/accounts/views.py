@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -62,6 +63,8 @@ class CustomLoginView(LoginView):
 
     def get_success_url(self):
         user = self.request.user
+        if user.is_superuser:
+            return reverse_lazy('accounts:admin_dashboard')
         if user.is_coordinator() and not user.is_verified:
             return reverse_lazy('accounts:pending_verification')
         return super().get_success_url()
@@ -100,7 +103,7 @@ def verify_coordinators(request):
 
     org = user.organization
     if org is None or not org.is_verified:
-        messages.info(request, "This page is only available for coordinators of verified organizations.")
+        messages.info(request, "Ця сторінка доступна лише координаторам верифікованих організацій.")
         return redirect('tasks:task_list')
 
     pending = (
@@ -127,7 +130,7 @@ def delete_account(request):
         user.deleted_at = timezone.now()
         user.save(update_fields=['is_active', 'deleted_at'])
         logout(request)
-        messages.success(request, "Your account has been permanently deleted.")
+        messages.success(request, "Ваш акаунт було назавжди видалено.")
         return redirect('accounts:login')
     return render(request, 'accounts/delete_account.html')
 
@@ -137,6 +140,13 @@ def coordinator_profile(request):
     user = request.user
     if not user.is_coordinator():
         return redirect('tasks:task_list')
+
+    if request.method == 'POST' and 'update_name' in request.POST:
+        user.first_name = request.POST.get('first_name', '').strip()
+        user.last_name = request.POST.get('last_name', '').strip()
+        user.save(update_fields=['first_name', 'last_name'])
+        messages.success(request, "Ім'я оновлено.")
+        return redirect('accounts:coordinator_profile')
 
     user_tasks = Task.objects.filter(created_by=user)
     personal_stats = {
@@ -174,21 +184,21 @@ def coordinator_org_create(request):
     if not user.is_coordinator():
         return redirect('tasks:task_list')
     if user.organization:
-        messages.error(request, "You are already in an organisation. Leave it first.")
+        messages.error(request, "Ви вже є членом організації. Спочатку покиньте її.")
         return redirect('accounts:coordinator_profile')
 
     name = request.POST.get('name', '').strip()
     if not name:
-        messages.error(request, "Organisation name cannot be empty.")
+        messages.error(request, "Назва організації не може бути порожньою.")
         return redirect('accounts:coordinator_profile')
     if Organization.objects.filter(name__iexact=name).exists():
-        messages.error(request, "An organisation with that name already exists.")
+        messages.error(request, "Організація з такою назвою вже існує.")
         return redirect('accounts:coordinator_profile')
 
     org = Organization.objects.create(name=name, created_by=user)
     user.organization = org
     user.save(update_fields=['organization'])
-    messages.success(request, f"Organisation '{org.name}' created. It will appear as verified once an admin approves it.")
+    messages.success(request, f"Організацію '{org.name}' створено. Вона стане верифікованою після схвалення адміністратором.")
     return redirect('accounts:coordinator_profile')
 
 
@@ -199,20 +209,20 @@ def coordinator_org_join(request):
     if not user.is_coordinator():
         return redirect('tasks:task_list')
     if user.organization:
-        messages.error(request, "You are already in an organisation. Leave it first.")
+        messages.error(request, "Ви вже є членом організації. Спочатку покиньте її.")
         return redirect('accounts:coordinator_profile')
 
     org_id = request.POST.get('org_id', '').strip()
     try:
         org = Organization.objects.get(pk=int(org_id))
     except (Organization.DoesNotExist, ValueError):
-        messages.error(request, "Organisation not found.")
+        messages.error(request, "Організацію не знайдено.")
         return redirect('accounts:coordinator_profile')
 
     user.organization = org
     user.is_verified = False
     user.save(update_fields=['organization', 'is_verified'])
-    messages.success(request, f"You have joined '{org.name}' and are pending verification by an existing member.")
+    messages.success(request, f"Ви приєдналися до '{org.name}' та очікуєте верифікації від існуючого учасника.")
     return redirect('accounts:pending_verification')
 
 
@@ -223,14 +233,14 @@ def coordinator_org_leave(request):
     if not user.is_coordinator():
         return redirect('tasks:task_list')
     if not user.organization:
-        messages.error(request, "You are not in any organisation.")
+        messages.error(request, "Ви не є членом жодної організації.")
         return redirect('accounts:coordinator_profile')
 
     org_name = user.organization.name
     user.organization = None
     user.is_verified = False
     user.save(update_fields=['organization', 'is_verified'])
-    messages.success(request, f"You have left '{org_name}'. Your account will need re-verification.")
+    messages.success(request, f"Ви покинули '{org_name}'. Ваш акаунт потребуватиме повторної верифікації.")
     return redirect('accounts:coordinator_profile')
 
 
@@ -240,12 +250,12 @@ def verify_coordinator(request, pk):
     """POST action: verify a specific coordinator within the same org."""
     user = request.user
     if not user.is_coordinator() or not user.is_verified:
-        messages.error(request, "You do not have permission to verify coordinators.")
+        messages.error(request, "У вас немає дозволу верифікувати координаторів.")
         return redirect('tasks:task_list')
 
     org = user.organization
     if org is None or not org.is_verified:
-        messages.error(request, "Only coordinators of verified organizations can verify members.")
+        messages.error(request, "Лише координатори верифікованих організацій можуть верифікувати учасників.")
         return redirect('tasks:task_list')
 
     target = get_object_or_404(
@@ -253,7 +263,7 @@ def verify_coordinator(request, pk):
     )
     target.is_verified = True
     target.save(update_fields=['is_verified'])
-    messages.success(request, f"{target.username} has been verified and can now use the platform.")
+    messages.success(request, f"{target.username} верифіковано та може користуватися платформою.")
     return redirect('accounts:verify_coordinators')
 
 
@@ -263,12 +273,12 @@ def decline_coordinator(request, pk):
     """POST action: decline a pending coordinator — removes them from the org."""
     user = request.user
     if not user.is_coordinator() or not user.is_verified:
-        messages.error(request, "You do not have permission to decline coordinators.")
+        messages.error(request, "У вас немає дозволу відхиляти координаторів.")
         return redirect('tasks:task_list')
 
     org = user.organization
     if org is None or not org.is_verified:
-        messages.error(request, "Only coordinators of verified organizations can manage members.")
+        messages.error(request, "Лише координатори верифікованих організацій можуть керувати учасниками.")
         return redirect('tasks:task_list')
 
     target = get_object_or_404(
@@ -276,5 +286,138 @@ def decline_coordinator(request, pk):
     )
     target.organization = None
     target.save(update_fields=['organization'])
-    messages.warning(request, f"{target.username}'s request has been declined and they have been removed from the organisation.")
+    messages.warning(request, f"Запит {target.username} відхилено, їх видалено з організації.")
     return redirect('accounts:verify_coordinators')
+
+
+# ---------------------------------------------------------------------------
+# Admin panel views (superuser only)
+# ---------------------------------------------------------------------------
+
+def _require_superuser(request):
+    """Return a redirect response if the user is not a superuser, else None."""
+    if not request.user.is_superuser:
+        return redirect('tasks:task_list')
+    return None
+
+
+@login_required
+def admin_dashboard(request):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    stats = {
+        'total_users':           User.objects.filter(is_active=True, is_superuser=False).count(),
+        'volunteers':            User.objects.filter(role=User.Role.VOLUNTEER, is_active=True).count(),
+        'coordinators':          User.objects.filter(role=User.Role.COORDINATOR, is_active=True).count(),
+        'pending_coordinators':  User.objects.filter(role=User.Role.COORDINATOR, is_verified=False, is_active=True).count(),
+        'total_orgs':            Organization.objects.count(),
+        'pending_orgs':          Organization.objects.filter(is_verified=False).count(),
+        'total_tasks':           Task.objects.filter(is_archived=False).count(),
+        'open_tasks':            Task.objects.filter(status=Task.Status.OPEN, is_archived=False).count(),
+    }
+    return render(request, 'admin_panel/dashboard.html', {'stats': stats})
+
+
+@login_required
+def admin_users(request):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    role_filter = request.GET.get('role', '')
+    verified_filter = request.GET.get('verified', '')
+
+    users = (
+        User.objects
+        .filter(is_active=True, is_superuser=False)
+        .select_related('organization')
+        .order_by('role', 'username')
+    )
+    if role_filter:
+        users = users.filter(role=role_filter)
+    if verified_filter == 'pending':
+        users = users.filter(role=User.Role.COORDINATOR, is_verified=False)
+    elif verified_filter == 'verified':
+        users = users.filter(is_verified=True)
+
+    return render(request, 'admin_panel/users.html', {
+        'users': users,
+        'role_filter': role_filter,
+        'verified_filter': verified_filter,
+    })
+
+
+@login_required
+def admin_organizations(request):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    orgs = (
+        Organization.objects
+        .annotate(member_count=Count('members'))
+        .select_related('created_by')
+        .order_by('is_verified', 'name')
+    )
+    return render(request, 'admin_panel/organizations.html', {'orgs': orgs})
+
+
+@login_required
+@require_POST
+def admin_verify_organization(request, pk):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    org = get_object_or_404(Organization, pk=pk)
+    org.is_verified = True
+    org.save(update_fields=['is_verified'])
+    messages.success(request, f"Організацію '{org.name}' верифіковано.")
+    return redirect('accounts:admin_organizations')
+
+
+@login_required
+@require_POST
+def admin_verify_coordinator(request, pk):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    target = get_object_or_404(User, pk=pk, role=User.Role.COORDINATOR)
+    target.is_verified = True
+    target.save(update_fields=['is_verified'])
+    messages.success(request, f"{target.username} верифіковано.")
+    return redirect('accounts:admin_users')
+
+
+@login_required
+@require_POST
+def admin_delete_user(request, pk):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    target = get_object_or_404(User, pk=pk, is_superuser=False)
+    target.is_active = False
+    target.deleted_at = timezone.now()
+    target.save(update_fields=['is_active', 'deleted_at'])
+    messages.success(request, f"Користувача '{target.username}' видалено.")
+    return redirect('accounts:admin_users')
+
+
+@login_required
+@require_POST
+def admin_delete_organization(request, pk):
+    guard = _require_superuser(request)
+    if guard:
+        return guard
+
+    org = get_object_or_404(Organization, pk=pk)
+    org_name = org.name
+    # Unverify coordinators who belonged to this org before SET_NULL fires
+    User.objects.filter(organization=org, role=User.Role.COORDINATOR).update(is_verified=False)
+    org.delete()
+    messages.success(request, f"Організацію '{org_name}' видалено.")
+    return redirect('accounts:admin_organizations')

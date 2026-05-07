@@ -8,7 +8,7 @@
 {% block content %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="/tasks/">Tasks</a></li>
+        <li class="breadcrumb-item"><a href="/tasks/">Завдання</a></li>
         <li class="breadcrumb-item active">{{ task.title }}</li>
     </ol>
 </nav>
@@ -29,28 +29,28 @@
                 <p>{{ task.description }}</p>
                 <hr>
                 <dl class="row">
-                    <dt class="col-sm-4">Priority</dt>
+                    <dt class="col-sm-4">Пріоритет</dt>
                     <dd class="col-sm-8">
                         <span class="badge badge-priority-{{ task.priority }}">{{ task.get_priority_display }}</span>
                     </dd>
-                    <dt class="col-sm-4">Address</dt>
+                    <dt class="col-sm-4">Адреса</dt>
                     <dd class="col-sm-8">{{ task.address }}</dd>
                     {% if task.has_coordinates %}
-                    <dt class="col-sm-4">Coordinates</dt>
+                    <dt class="col-sm-4">Координати</dt>
                     <dd class="col-sm-8">{{ task.latitude|floatformat:5 }}, {{ task.longitude|floatformat:5 }}</dd>
                     {% endif %}
-                    <dt class="col-sm-4">Created by</dt>
+                    <dt class="col-sm-4">Створено</dt>
                     <dd class="col-sm-8">
                         {{ task.created_by }}
                         {% if task.created_by.organization and task.created_by.organization.is_verified %}
                             <span class="text-muted small">(<i class="bi bi-building"></i> {{ task.created_by.organization.name }})</span>
                         {% endif %}
                     </dd>
-                    <dt class="col-sm-4">Volunteers</dt>
+                    <dt class="col-sm-4">Волонтери</dt>
                     <dd class="col-sm-8">
                         <span class="fw-semibold">{{ task.volunteers_count }} / {{ task.volunteers_needed }}</span>
                         {% if task.status == 'open' and task.slots_available %}
-                            <span class="badge bg-success ms-1">slots open</span>
+                            <span class="badge bg-success ms-1">є місця</span>
                         {% endif %}
                         {% if assigned_volunteers %}
                             <ul class="list-unstyled mt-1 mb-0">
@@ -59,9 +59,9 @@
                                     <i class="bi bi-person-check"></i> {{ vol.username }}
                                     {% if can_manage and task.status != 'completed' %}
                                     <form method="post" action="/tasks/{{ task.id }}/remove-volunteer/{{ vol.id }}/"
-                                          onsubmit="return confirm('Remove {{ vol.username }} from this task?');">
+                                          onsubmit="return confirm('Видалити {{ vol.username }} з цього завдання?');">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-link btn-sm text-danger p-0" title="Remove volunteer">
+                                        <button type="submit" class="btn btn-link btn-sm text-danger p-0" title="Видалити волонтера">
                                             <i class="bi bi-x-circle"></i>
                                         </button>
                                     </form>
@@ -73,7 +73,7 @@
                     </dd>
                     {% with skills=task.required_skills.all %}
                     {% if skills %}
-                    <dt class="col-sm-4">Skills needed</dt>
+                    <dt class="col-sm-4">Потрібні навички</dt>
                     <dd class="col-sm-8">
                         <div class="d-flex flex-wrap gap-1">
                             {% for skill in skills %}
@@ -83,14 +83,14 @@
                     </dd>
                     {% endif %}
                     {% endwith %}
-                    <dt class="col-sm-4">Created</dt>
+                    <dt class="col-sm-4">Дата створення</dt>
                     <dd class="col-sm-8">{{ task.created_at|date:"d M Y H:i" }}</dd>
                     {% if task.start_date %}
-                    <dt class="col-sm-4">Start Date</dt>
+                    <dt class="col-sm-4">Дата початку</dt>
                     <dd class="col-sm-8">{{ task.start_date|date:"d M Y" }}</dd>
                     {% endif %}
                     {% if task.end_date %}
-                    <dt class="col-sm-4">End Date</dt>
+                    <dt class="col-sm-4">Дата завершення</dt>
                     <dd class="col-sm-8">{{ task.end_date|date:"d M Y" }}</dd>
                     {% endif %}
                 </dl>
@@ -99,14 +99,14 @@
                     {% if user.role == 'volunteer' %}
                         {% if user_already_accepted %}
                             <span class="btn btn-success disabled">
-                                <i class="bi bi-check-circle"></i> Already Accepted
+                                <i class="bi bi-check-circle"></i> Вже прийнято
                             </span>
                             {% if task.status != 'completed' %}
                             <form method="post" action="/tasks/{{ task.id }}/unaccept/"
-                                  onsubmit="return confirm('Withdraw from this task?');">
+                                  onsubmit="return confirm('Відмовитися від цього завдання?');">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-outline-danger">
-                                    <i class="bi bi-x-circle"></i> Withdraw
+                                    <i class="bi bi-x-circle"></i> Відмовитися
                                 </button>
                             </form>
                             {% endif %}
@@ -114,11 +114,11 @@
                             <form method="post" action="/tasks/{{ task.id }}/accept/">
                                 {% csrf_token %}
                                 <button class="btn btn-success">
-                                    <i class="bi bi-check-lg"></i> Accept Task
+                                    <i class="bi bi-check-lg"></i> Прийняти завдання
                                 </button>
                             </form>
                         {% else %}
-                            <span class="btn btn-secondary disabled">No Slots Available</span>
+                            <span class="btn btn-secondary disabled">Місць немає</span>
                         {% endif %}
                     {% endif %}
 
@@ -127,7 +127,7 @@
                             <form method="post" action="/tasks/{{ task.id }}/complete/">
                                 {% csrf_token %}
                                 <button class="btn btn-primary">
-                                    <i class="bi bi-flag"></i> Mark Complete
+                                    <i class="bi bi-flag"></i> Позначити як завершене
                                 </button>
                             </form>
                         {% endif %}
@@ -136,36 +136,36 @@
                     {% if can_manage %}
                         {% if task.status == 'open' and not task.is_archived %}
                         <a href="/tasks/{{ task.id }}/edit/" class="btn btn-outline-secondary">
-                            <i class="bi bi-pencil"></i> Edit
+                            <i class="bi bi-pencil"></i> Редагувати
                         </a>
                         {% endif %}
                         {% if not task.is_archived and task.volunteers_count > 0 %}
                         <form method="post" action="/tasks/{{ task.id }}/delete/"
-                              onsubmit="return confirm('{% if task.status == "in_progress" %}This task is currently in progress and will be marked as Completed and archived. Continue?{% else %}This task will be archived. Continue?{% endif %}');">
+                              onsubmit="return confirm('{% if task.status == "in_progress" %}Це завдання виконується і буде позначено як завершене та заархівовано. Продовжити?{% else %}Це завдання буде заархівовано. Продовжити?{% endif %}');">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-warning">
-                                <i class="bi bi-archive"></i> Archive
+                                <i class="bi bi-archive"></i> Архівувати
                             </button>
                         </form>
                         {% elif not task.is_archived and task.status == "completed" %}
                         <form method="post" action="/tasks/{{ task.id }}/delete/"
-                              onsubmit="return confirm('This task will be archived. Continue?');">
+                              onsubmit="return confirm('Це завдання буде заархівовано. Продовжити?');">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-warning">
-                                <i class="bi bi-archive"></i> Archive
+                                <i class="bi bi-archive"></i> Архівувати
                             </button>
                         </form>
                         {% else %}
                         <form method="post" action="/tasks/{{ task.id }}/delete/"
-                              onsubmit="return confirm('Delete this task permanently?');">
+                              onsubmit="return confirm('Видалити це завдання назавжди?');">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-danger">
-                                <i class="bi bi-trash"></i> Delete
+                                <i class="bi bi-trash"></i> Видалити
                             </button>
                         </form>
                         {% endif %}
                     {% endif %}
-                    <a href="/tasks/" class="btn btn-outline-secondary ms-auto">← Back</a>
+                    <a href="/tasks/" class="btn btn-outline-secondary ms-auto">← Назад</a>
                 </div>
             </div>
         </div>
@@ -174,7 +174,7 @@
     {% if task.has_coordinates %}
     <div class="col-lg-4">
         <div class="card shadow-sm">
-            <div class="card-header">Location</div>
+            <div class="card-header">Локація</div>
             <div class="card-body p-2">
                 <div id="detail-map"></div>
             </div>

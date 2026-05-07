@@ -90,7 +90,7 @@ def task_list(request):
 
     prefetch = ['assigned_volunteers', 'created_by__organization', 'required_skills']
 
-    if user.is_coordinator():
+    if user.is_coordinator() or user.is_superuser:
         base_qs = Task.objects.filter(is_archived=False)
         if org_q is not None:
             base_qs = base_qs.filter(org_q)
@@ -161,7 +161,7 @@ def task_list(request):
             tasks = base_qs.prefetch_related(*prefetch)
             recommended_ids = {}
 
-    if user.is_coordinator():
+    if user.is_coordinator() or user.is_superuser:
         radius_km = float(settings.TASK_RADIUS_KM)
 
     # Annotate each task with its recommendation rank (0 = not recommended).
@@ -220,11 +220,11 @@ def task_detail(request, pk):
 
 @login_required
 def task_create(request):
-    if not request.user.is_coordinator():
-        messages.error(request, "Only coordinators can create tasks.")
+    if not (request.user.is_coordinator() or request.user.is_superuser):
+        messages.error(request, "Лише координатори можуть створювати завдання.")
         return redirect('tasks:task_list')
     if not request.user.can_work():
-        messages.warning(request, "Your account is pending verification.")
+        messages.warning(request, "Ваш акаунт очікує верифікації.")
         return redirect('accounts:pending_verification')
 
     if request.method == 'POST':
@@ -247,8 +247,8 @@ def task_create(request):
             if country_code not in _ALLOWED_COUNTRY_CODES:
                 form.add_error(
                     'address',
-                    "Tasks can only be created in Ukraine, Sweden, or Norway. "
-                    "Please enter an address in one of those countries."
+                    "Завдання можна створювати лише в Україні, Швеції або Норвегії. "
+                    "Введіть адресу в одній з цих країн."
                 )
             else:
                 task.save()
@@ -258,18 +258,18 @@ def task_create(request):
                 if task.latitude is None:
                     messages.warning(
                         request,
-                        f"Task saved but address '{task.address}' could not be geocoded. "
-                        "The task will not appear on the map until a valid address is provided."
+                        f"Завдання збережено, але адресу '{task.address}' не вдалося геокодувати. "
+                        "Завдання не з'явиться на карті, доки не буде вказана дійсна адреса."
                     )
                 else:
-                    messages.success(request, f"Task '{task.title}' created successfully.")
+                    messages.success(request, f"Завдання '{task.title}' успішно створено.")
                 return redirect('tasks:task_detail', pk=task.pk)
     else:
         form = TaskForm()
 
     return render(request, 'tasks/task_form.html', {
         'form': form,
-        'action': 'Create',
+        'action': 'Створити',
         **_skills_context(request, None),
     })
 
@@ -277,17 +277,17 @@ def task_create(request):
 @login_required
 def task_edit(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if not request.user.is_coordinator():
-        messages.error(request, "Only coordinators can edit tasks.")
+    if not (request.user.is_coordinator() or request.user.is_superuser):
+        messages.error(request, "Лише координатори можуть редагувати завдання.")
         return redirect('tasks:task_detail', pk=pk)
     if not request.user.can_work():
-        messages.warning(request, "Your account is pending verification.")
+        messages.warning(request, "Ваш акаунт очікує верифікації.")
         return redirect('accounts:pending_verification')
     if not request.user.can_manage_task(task):
-        messages.error(request, "You can only edit tasks created by you or your organisation.")
+        messages.error(request, "Ви можете редагувати лише завдання, створені вами або вашою організацією.")
         return redirect('tasks:task_detail', pk=pk)
     if task.status != Task.Status.OPEN or task.is_archived:
-        messages.error(request, "Only open tasks can be edited.")
+        messages.error(request, "Можна редагувати лише відкриті завдання.")
         return redirect('tasks:task_detail', pk=pk)
 
     if request.method == 'POST':
@@ -309,22 +309,22 @@ def task_edit(request, pk):
             if country_code not in _ALLOWED_COUNTRY_CODES:
                 form.add_error(
                     'address',
-                    "Tasks can only be created in Ukraine, Sweden, or Norway. "
-                    "Please enter an address in one of those countries."
+                    "Завдання можна створювати лише в Україні, Швеції або Норвегії. "
+                    "Введіть адресу в одній з цих країн."
                 )
             else:
                 task.save()
                 task.required_skills.set(
                     Skill.objects.filter(id__in=request.POST.getlist('required_skills'))
                 )
-                messages.success(request, "Task updated.")
+                messages.success(request, "Завдання оновлено.")
                 return redirect('tasks:task_detail', pk=task.pk)
     else:
         form = TaskForm(instance=task)
 
     return render(request, 'tasks/task_form.html', {
         'form': form,
-        'action': 'Edit',
+        'action': 'Редагувати',
         'task': task,
         **_skills_context(request, task),
     })
@@ -334,24 +334,24 @@ def task_edit(request, pk):
 @require_POST
 def task_delete(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if not request.user.is_coordinator():
-        messages.error(request, "Only coordinators can delete tasks.")
+    if not (request.user.is_coordinator() or request.user.is_superuser):
+        messages.error(request, "Лише координатори можуть видаляти завдання.")
         return redirect('tasks:task_detail', pk=pk)
     if not request.user.can_work():
-        messages.warning(request, "Your account is pending verification.")
+        messages.warning(request, "Ваш акаунт очікує верифікації.")
         return redirect('accounts:pending_verification')
     if not request.user.can_manage_task(task):
-        messages.error(request, "You can only delete tasks created by you or your organisation.")
+        messages.error(request, "Ви можете видаляти лише завдання, створені вами або вашою організацією.")
         return redirect('tasks:task_detail', pk=pk)
     if task.assigned_volunteers.exists() or task.status == Task.Status.COMPLETED:
         task.is_archived = True
         if task.status == Task.Status.IN_PROGRESS:
             task.status = Task.Status.COMPLETED
         task.save(update_fields=['is_archived', 'status', 'updated_at'])
-        messages.success(request, f"Task '{task.title}' archived.")
+        messages.success(request, f"Завдання '{task.title}' заархівовано.")
     else:
         task.delete()
-        messages.success(request, f"Task '{task.title}' deleted.")
+        messages.success(request, f"Завдання '{task.title}' видалено.")
     return redirect('tasks:task_list')
 
 
@@ -359,7 +359,7 @@ def task_delete(request, pk):
 def task_archive_list(request):
     user = request.user
     if not user.is_coordinator() and not user.is_superuser:
-        messages.error(request, "Only coordinators can view the archive.")
+        messages.error(request, "Лише координатори можуть переглядати архів.")
         return redirect('tasks:task_list')
     if not user.is_superuser and not user.can_work():
         messages.warning(request, "Your account is pending verification.")
@@ -401,23 +401,23 @@ def task_accept(request, pk):
     """Volunteer accepts an open task — added to assigned_volunteers."""
     task = get_object_or_404(Task, pk=pk)
     if not request.user.is_volunteer():
-        messages.error(request, "Only volunteers can accept tasks.")
+        messages.error(request, "Лише волонтери можуть брати завдання.")
         return redirect('tasks:task_detail', pk=pk)
     if task.status == Task.Status.COMPLETED or task.is_archived:
-        messages.error(request, "This task is no longer accepting volunteers.")
+        messages.error(request, "Це завдання більше не приймає волонтерів.")
         return redirect('tasks:task_detail', pk=pk)
     if request.user in task.assigned_volunteers.all():
-        messages.warning(request, "You have already accepted this task.")
+        messages.warning(request, "Ви вже прийняли це завдання.")
         return redirect('tasks:task_detail', pk=pk)
     if not task.slots_available:
-        messages.error(request, "This task has no available slots.")
+        messages.error(request, "У цьому завданні немає вільних місць.")
         return redirect('tasks:task_detail', pk=pk)
 
     task.assigned_volunteers.add(request.user)
     task.status = Task.Status.IN_PROGRESS
     task.save(update_fields=['status', 'updated_at'])
 
-    messages.success(request, f"You accepted task '{task.title}'.")
+    messages.success(request, f"Ви прийняли завдання '{task.title}'.")
     return redirect('tasks:task_detail', pk=pk)
 
 
@@ -427,13 +427,13 @@ def task_unaccept(request, pk):
     """Volunteer withdraws their acceptance of a task."""
     task = get_object_or_404(Task, pk=pk)
     if not request.user.is_volunteer():
-        messages.error(request, "Only volunteers can withdraw from tasks.")
+        messages.error(request, "Лише волонтери можуть відмовлятися від завдань.")
         return redirect('tasks:task_detail', pk=pk)
     if request.user not in task.assigned_volunteers.all():
-        messages.warning(request, "You have not accepted this task.")
+        messages.warning(request, "Ви не приймали це завдання.")
         return redirect('tasks:task_detail', pk=pk)
     if task.status == Task.Status.COMPLETED:
-        messages.error(request, "Cannot withdraw from a completed task.")
+        messages.error(request, "Неможливо відмовитися від завершеного завдання.")
         return redirect('tasks:task_detail', pk=pk)
 
     task.assigned_volunteers.remove(request.user)
@@ -441,7 +441,7 @@ def task_unaccept(request, pk):
         task.status = Task.Status.OPEN
         task.save(update_fields=['status', 'updated_at'])
 
-    messages.success(request, f"You have withdrawn from task '{task.title}'.")
+    messages.success(request, f"Ви відмовилися від завдання '{task.title}'.")
     return redirect('tasks:task_detail', pk=pk)
 
 
@@ -451,21 +451,21 @@ def task_complete(request, pk):
     """Mark a task as Completed. Only coordinators can do this."""
     task = get_object_or_404(Task, pk=pk)
     user = request.user
-    if not user.is_coordinator():
-        messages.error(request, "Only coordinators can mark tasks as completed.")
+    if not (user.is_coordinator() or user.is_superuser):
+        messages.error(request, "Лише координатори можуть позначати завдання як завершені.")
         return redirect('tasks:task_detail', pk=pk)
     if not user.can_work():
-        messages.warning(request, "Your account is pending verification.")
+        messages.warning(request, "Ваш акаунт очікує верифікації.")
         return redirect('accounts:pending_verification')
     if not user.can_manage_task(task):
-        messages.error(request, "You can only complete tasks created by you or your organisation.")
+        messages.error(request, "Ви можете завершувати лише завдання, створені вами або вашою організацією.")
         return redirect('tasks:task_detail', pk=pk)
     if task.status == Task.Status.COMPLETED:
-        messages.warning(request, "Task is already completed.")
+        messages.warning(request, "Завдання вже завершено.")
         return redirect('tasks:task_detail', pk=pk)
     task.status = Task.Status.COMPLETED
     task.save()
-    messages.success(request, f"Task '{task.title}' marked as Completed.")
+    messages.success(request, f"Завдання '{task.title}' позначено як завершене.")
     return redirect('tasks:task_detail', pk=pk)
 
 
@@ -474,14 +474,14 @@ def task_complete(request, pk):
 def task_remove_volunteer(request, pk, vol_id):
     """Coordinator removes a specific volunteer from a task."""
     task = get_object_or_404(Task, pk=pk)
-    if not request.user.is_coordinator():
-        messages.error(request, "Only coordinators can remove volunteers.")
+    if not (request.user.is_coordinator() or request.user.is_superuser):
+        messages.error(request, "Лише координатори можуть видаляти волонтерів.")
         return redirect('tasks:task_detail', pk=pk)
     if not request.user.can_manage_task(task):
-        messages.error(request, "You can only manage tasks created by you or your organisation.")
+        messages.error(request, "Ви можете керувати лише завданнями, створеними вами або вашою організацією.")
         return redirect('tasks:task_detail', pk=pk)
     if task.status == Task.Status.COMPLETED:
-        messages.error(request, "Cannot remove volunteers from a completed task.")
+        messages.error(request, "Неможливо видалити волонтерів із завершеного завдання.")
         return redirect('tasks:task_detail', pk=pk)
 
     volunteer = get_object_or_404(task.assigned_volunteers, pk=vol_id)
@@ -489,7 +489,7 @@ def task_remove_volunteer(request, pk, vol_id):
     if task.assigned_volunteers.count() == 0:
         task.status = Task.Status.OPEN
         task.save(update_fields=['status', 'updated_at'])
-    messages.success(request, f"{volunteer.username} has been removed from the task.")
+    messages.success(request, f"{volunteer.username} видалено із завдання.")
     return redirect('tasks:task_detail', pk=pk)
 
 

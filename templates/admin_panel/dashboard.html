@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Панель адміністратора{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-shield-lock"></i> Панель адміністратора</h2>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card text-bg-primary h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="card-text small mb-1 opacity-75">Всього користувачів</p>
+                        <h3 class="card-title mb-0">{{ stats.total_users }}</h3>
+                        <p class="small mt-1 mb-0 opacity-75">{{ stats.volunteers }} волонтерів &middot; {{ stats.coordinators }} координаторів</p>
+                    </div>
+                    <i class="bi bi-people fs-2 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card {% if stats.pending_coordinators > 0 %}text-bg-warning{% else %}text-bg-success{% endif %} h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="card-text small mb-1 opacity-75">Координатори в очікуванні</p>
+                        <h3 class="card-title mb-0">{{ stats.pending_coordinators }}</h3>
+                        <p class="small mt-1 mb-0 opacity-75">очікують верифікації</p>
+                    </div>
+                    <i class="bi bi-person-dash fs-2 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card {% if stats.pending_orgs > 0 %}text-bg-warning{% else %}text-bg-success{% endif %} h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="card-text small mb-1 opacity-75">Організації в очікуванні</p>
+                        <h3 class="card-title mb-0">{{ stats.pending_orgs }}</h3>
+                        <p class="small mt-1 mb-0 opacity-75">з {{ stats.total_orgs }} всього</p>
+                    </div>
+                    <i class="bi bi-building-slash fs-2 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card text-bg-secondary h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="card-text small mb-1 opacity-75">Активні завдання</p>
+                        <h3 class="card-title mb-0">{{ stats.total_tasks }}</h3>
+                        <p class="small mt-1 mb-0 opacity-75">{{ stats.open_tasks }} відкритих</p>
+                    </div>
+                    <i class="bi bi-list-check fs-2 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title"><i class="bi bi-people"></i> Керування користувачами</h5>
+                <p class="card-text text-muted flex-grow-1">Верифікуйте координаторів в очікуванні або видаляйте акаунти координаторів та волонтерів.</p>
+                {% if stats.pending_coordinators > 0 %}
+                    <span class="badge bg-warning text-dark mb-2">{{ stats.pending_coordinators }} очікують верифікації</span>
+                {% endif %}
+                <a href="{% url 'accounts:admin_users' %}" class="btn btn-primary mt-auto">Керувати користувачами</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title"><i class="bi bi-building"></i> Керування організаціями</h5>
+                <p class="card-text text-muted flex-grow-1">Верифікуйте організації в очікуванні або видаляйте існуючі.</p>
+                {% if stats.pending_orgs > 0 %}
+                    <span class="badge bg-warning text-dark mb-2">{{ stats.pending_orgs }} очікують верифікації</span>
+                {% endif %}
+                <a href="{% url 'accounts:admin_organizations' %}" class="btn btn-primary mt-auto">Керувати організаціями</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title"><i class="bi bi-list-task"></i> Керування завданнями</h5>
+                <p class="card-text text-muted flex-grow-1">Створюйте нові завдання або переглядайте всі завдання для редагування, завершення або видалення.</p>
+                <div class="d-flex gap-2 mt-auto">
+                    <a href="{% url 'tasks:task_create' %}" class="btn btn-success flex-fill">Нове завдання</a>
+                    <a href="{% url 'tasks:task_list' %}" class="btn btn-primary flex-fill">Всі завдання</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ action }} Task — VolunteerCoord{% endblock %}
+{% block title %}{{ action }} завдання — VolunteerCoord{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -12,7 +12,7 @@
     <div class="col-md-8">
         <div class="card shadow-sm">
             <div class="card-body p-4">
-                <h3 class="mb-4">{{ action }} Task</h3>
+                <h3 class="mb-4">{{ action }} завдання</h3>
                 <form method="post" id="task-form">
                     {% csrf_token %}
                     <input type="hidden" name="_coord_lat" id="coord_lat"
@@ -33,9 +33,9 @@
                                        value="{{ field.value|default:'' }}"
                                        autocomplete="off">
                                 <button type="button" class="btn btn-outline-secondary" id="btn-use-location"
-                                        title="Fill address from your current GPS position">
+                                        title="Встановити адресу з поточного GPS-положення">
                                     <span id="loc-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
-                                    <i class="bi bi-crosshair" id="loc-icon"></i> Use my location
+                                    <i class="bi bi-crosshair" id="loc-icon"></i> Моє місцезнаходження
                                 </button>
                             </div>
                             {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
@@ -46,7 +46,7 @@
                                 <div id="location-map"></div>
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
-                                    Drag the marker to fine-tune the location.
+                                    Перетягніть маркер для точного налаштування локації.
                                 </div>
                             </div>
 
@@ -85,11 +85,10 @@
                     {% if skills_by_category %}
                     <div class="mb-3">
                         <label class="form-label fw-semibold">
-                            Required Skills <span class="text-muted fw-normal">(optional)</span>
+                            Потрібні навички <span class="text-muted fw-normal">(необов'язково)</span>
                         </label>
                         <p class="text-muted small mb-2">
-                            Select skills volunteers should ideally have. The recommendation algorithm
-                            will prioritise volunteers whose skills match.
+                            Оберіть навички, які повинні мати волонтери. Алгоритм рекомендацій надаватиме перевагу волонтерам з відповідними навичками.
                         </p>
                         {% for category, skills in skills_by_category.items %}
                         <div class="mb-2">
@@ -116,13 +115,13 @@
 
                     <div class="alert alert-info small">
                         <i class="bi bi-info-circle"></i>
-                        The address is geocoded via <strong>Nominatim/OpenStreetMap</strong>.
-                        Use the <em>Use my location</em> button to set coordinates directly from your device.
+                        Адреса геокодується через <strong>Nominatim/OpenStreetMap</strong>.
+                        Натисніть кнопку <em>Моє місцезнаходження</em> для встановлення координат з пристрою.
                     </div>
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">{{ action }} Task</button>
+                        <button type="submit" class="btn btn-primary">{{ action }} завдання</button>
                         <a href="{% if task %}/tasks/{{ task.id }}/{% else %}/tasks/{% endif %}"
-                           class="btn btn-outline-secondary">Cancel</a>
+                           class="btn btn-outline-secondary">Скасувати</a>
                     </div>
                 </form>
             </div>
@@ -184,7 +183,7 @@ function initMap(lat, lon) {
 
 function reverseGeocode(lat, lon) {
     fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
-        headers: { 'Accept-Language': 'en' },
+        headers: { 'Accept-Language': 'uk' },
     })
     .then(r => r.json())
     .then(data => {
@@ -192,7 +191,7 @@ function reverseGeocode(lat, lon) {
             addressInput.value = data.display_name;
         }
     })
-    .catch(() => {});  // silently ignore — address field stays as-is
+    .catch(() => {});
 }
 
 function setSpinning(on) {
@@ -203,7 +202,7 @@ function setSpinning(on) {
 
 locBtn.addEventListener('click', () => {
     if (!navigator.geolocation) {
-        alert('Geolocation is not supported by your browser.');
+        alert('Геолокація не підтримується вашим браузером.');
         return;
     }
     setSpinning(true);
@@ -219,25 +218,21 @@ locBtn.addEventListener('click', () => {
         },
         err => {
             setSpinning(false);
-            alert('Could not retrieve your location: ' + err.message);
+            alert('Не вдалося визначити ваше місцезнаходження: ' + err.message);
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
 });
 
-// If the coordinator manually edits the address, clear stored coords so
-// the server falls back to geocoding the typed address.
 addressInput.addEventListener('input', () => {
     coordLatInput.value = '';
     coordLonInput.value = '';
 });
 
-// On edit: if task already has coords, show the map immediately.
 (function () {
     const lat = parseFloat(coordLatInput.value);
     const lon = parseFloat(coordLonInput.value);
     if (!isNaN(lat) && !isNaN(lon)) {
-        // Defer until Leaflet CSS is ready
         setTimeout(() => initMap(lat, lon), 50);
     }
 })();
