@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE — JetBrains
+.idea/
+
+# IDE — VS Code
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Images / misc artifacts at root
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
+# Static collected files (if using collectstatic)
+staticfiles/
