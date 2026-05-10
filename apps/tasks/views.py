@@ -90,6 +90,92 @@ def _revert_to_open_if_empty(task):
         task.save(update_fields=['status', 'updated_at'])
 
 
+def _get_selected_orgs(request, user):
+    """Повертає значення обраного фільтру за організаціями."""
+    if 'filter_applied' in request.GET:
+        return request.GET.getlist('org')
+    if user.is_coordinator():
+        if user.organization and user.organization.is_verified:
+            return [str(user.organization_id)]
+        return ['mine']
+    return []
+
+
+def _get_nearby_tasks_with_recommendations(request, user, open_tasks_base, org_q, prefetch, volunteer_lat, volunteer_lon):
+    """Повертає завдання, рекомендації та радіуси для волонтера із вказаною локацією."""
+    try:
+        radius_km = max(1.0, min(100.0, float(request.GET.get('radius', settings.TASK_RADIUS_KM))))
+    except (ValueError, TypeError):
+        radius_km = settings.TASK_RADIUS_KM
+
+    open_tasks_qs = open_tasks_base if org_q is None else open_tasks_base.filter(org_q)
+    nearby_tasks = [
+        task for task in open_tasks_qs
+        if task.has_coordinates
+        and geodesic((volunteer_lat, volunteer_lon), (task.latitude, task.longitude)).km <= radius_km
+    ]
+
+    tasks = Task.objects.filter(id__in=[t.id for t in nearby_tasks]).prefetch_related(*prefetch)
+
+    try:
+        volunteer_skill_ids = frozenset(user.volunteer_profile.skills.values_list('id', flat=True))
+    except Exception:
+        volunteer_skill_ids = frozenset()
+
+    ranked_ids = get_recommended_tasks_for_volunteer(
+        volunteer_id=user.id,
+        volunteer_lat=float(volunteer_lat),
+        volunteer_lon=float(volunteer_lon),
+        open_tasks=nearby_tasks,
+        volunteer_skill_ids=volunteer_skill_ids,
+    )
+    recommended_ids = {tid: rank for rank, tid in enumerate(ranked_ids[:3], start=1)}
+    rank_position = {tid: pos for pos, tid in enumerate(ranked_ids)}
+    tasks = sorted(tasks, key=lambda t: rank_position.get(t.id, len(ranked_ids)))
+    return tasks, recommended_ids, radius_km
+
+
+def _get_volunteer_tasks(request, user, org_q, prefetch, volunteer_lat, volunteer_lon):
+    open_tasks_base = Task.objects.annotate(
+        accepted_count=Count('assigned_volunteers')
+    ).filter(
+        status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
+        is_archived=False,
+        accepted_count__lt=F('volunteers_needed'),
+    )
+
+    if volunteer_lat and volunteer_lon:
+        return _get_nearby_tasks_with_recommendations(
+            request, user, open_tasks_base, org_q, prefetch, volunteer_lat, volunteer_lon
+        )
+
+    base_qs = open_tasks_base if org_q is None else open_tasks_base.filter(org_q)
+    return base_qs.prefetch_related(*prefetch), {}, float(settings.TASK_RADIUS_KM)
+
+
+def _build_task_geojson(tasks, recommended_ids):
+    """Серіалізує завдання з координатами в GeoJSON FeatureCollection."""
+    features = [
+        {
+            'type': 'Feature',
+            'geometry': {'type': 'Point', 'coordinates': [task.longitude, task.latitude]},
+            'properties': {
+                'id': task.id,
+                'title': task.title,
+                'status': task.status,
+                'priority': task.priority,
+                'recommendation_rank': recommended_ids.get(task.id, 0),
+                'volunteers_count': task.volunteers_count,
+                'volunteers_needed': task.volunteers_needed,
+                'url': f'/tasks/{task.id}/',
+            },
+        }
+        for task in tasks
+        if task.has_coordinates
+    ]
+    return json.dumps({'type': 'FeatureCollection', 'features': features})
+
+
 @login_required
 def task_list(request):
     """
@@ -100,27 +186,10 @@ def task_list(request):
     user = request.user
     volunteer_lat = request.session.get('volunteer_lat')
     volunteer_lon = request.session.get('volunteer_lon')
-
-    verified_orgs = Organization.objects.filter(is_verified=True)
-
-    # Визначаємо вибрані фільтри організацій.
-    # Сигнальний параметр 'filter_applied' відрізняє надіслану форму від першого завантаження.
-    filter_applied = 'filter_applied' in request.GET
-    if filter_applied:
-        selected_orgs = request.GET.getlist('org')
-    else:
-        # Застосовуємо стандартні значення на основі ролі при першому завантаженні
-        if user.is_coordinator():
-            if user.organization and user.organization.is_verified:
-                selected_orgs = [str(user.organization_id)]
-            else:
-                selected_orgs = ['mine']
-        else:
-            selected_orgs = []  # волонтери/адміни: показувати все
-
-    org_q = _build_org_filter(selected_orgs, user)
-
     prefetch = ['assigned_volunteers', 'created_by__organization', 'required_skills']
+
+    selected_orgs = _get_selected_orgs(request, user)
+    org_q = _build_org_filter(selected_orgs, user)
 
     if user.is_coordinator() or user.is_superuser:
         base_qs = Task.objects.filter(is_archived=False)
@@ -128,103 +197,23 @@ def task_list(request):
             base_qs = base_qs.filter(org_q)
         tasks = base_qs.prefetch_related(*prefetch)
         recommended_ids = {}
-    else:
-        # Вигляд для волонтера: фільтрація за радіусом, якщо відома локація
-        open_tasks_base = Task.objects.annotate(
-            accepted_count=Count('assigned_volunteers')
-        ).filter(
-            status__in=[Task.Status.OPEN, Task.Status.IN_PROGRESS],
-            is_archived=False,
-            accepted_count__lt=F('volunteers_needed'),
-        )
-        if volunteer_lat and volunteer_lon:
-            try:
-                radius_km = max(1.0, min(100.0, float(request.GET.get('radius', settings.TASK_RADIUS_KM))))
-            except (ValueError, TypeError):
-                radius_km = settings.TASK_RADIUS_KM
-            open_tasks_qs = open_tasks_base
-            if org_q is not None:
-                open_tasks_qs = open_tasks_qs.filter(org_q)
-            nearby_tasks = []
-            for task in open_tasks_qs:
-                if task.has_coordinates:
-                    distance = geodesic(
-                        (volunteer_lat, volunteer_lon),
-                        (task.latitude, task.longitude),
-                    ).km
-                    if distance <= radius_km:
-                        nearby_tasks.append(task)
-            tasks = Task.objects.filter(
-                id__in=[t.id for t in nearby_tasks]
-            ).prefetch_related(*prefetch)
-
-            try:
-                volunteer_skill_ids = frozenset(
-                    user.volunteer_profile.skills.values_list('id', flat=True)
-                )
-            except Exception:
-                volunteer_skill_ids = frozenset()
-
-            ranked_ids = get_recommended_tasks_for_volunteer(
-                volunteer_id=user.id,
-                volunteer_lat=float(volunteer_lat),
-                volunteer_lon=float(volunteer_lon),
-                open_tasks=nearby_tasks,
-                volunteer_skill_ids=volunteer_skill_ids,
-            )
-            # Топ-3 отримують значок; словник відображає task_id - ранг (1, 2, 3)
-            recommended_ids = {tid: rank for rank, tid in enumerate(ranked_ids[:3], start=1)}
-            # Сортуємо всі завдання: рекомендовані першими (за рангом), потім за вартістю
-            rank_position = {tid: pos for pos, tid in enumerate(ranked_ids)}
-            tasks = sorted(
-                tasks,
-                key=lambda t: rank_position.get(t.id, len(ranked_ids)),
-            )
-        else:
-            radius_km = float(settings.TASK_RADIUS_KM)
-            base_qs = open_tasks_base
-            if org_q is not None:
-                base_qs = base_qs.filter(org_q)
-            tasks = base_qs.prefetch_related(*prefetch)
-            recommended_ids = {}
-
-    if user.is_coordinator() or user.is_superuser:
         radius_km = float(settings.TASK_RADIUS_KM)
+    else:
+        tasks, recommended_ids, radius_km = _get_volunteer_tasks(
+            request, user, org_q, prefetch, volunteer_lat, volunteer_lon
+        )
 
-    # Анотуємо кожне завдання його рангом рекомендації (0 = не рекомендовано).
-    # Гарантує, що task.recommendation_rank завжди доступний у шаблоні.
-    rank_lookup = recommended_ids if isinstance(recommended_ids, dict) else {}
     for task in tasks:
-        task.recommendation_rank = rank_lookup.get(task.id, 0)
-
-    # Формуємо GeoJSON для маркерів на карті
-    features = []
-    for task in tasks:
-        if task.has_coordinates:
-            features.append({
-                'type': 'Feature',
-                'geometry': {'type': 'Point', 'coordinates': [task.longitude, task.latitude]},
-                'properties': {
-                    'id': task.id,
-                    'title': task.title,
-                    'status': task.status,
-                    'priority': task.priority,
-                    'recommendation_rank': recommended_ids.get(task.id, 0) if isinstance(recommended_ids, dict) else 0,
-                    'volunteers_count': task.volunteers_count,
-                    'volunteers_needed': task.volunteers_needed,
-                    'url': f'/tasks/{task.id}/',
-                },
-            })
-    geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
+        task.recommendation_rank = recommended_ids.get(task.id, 0)
 
     context = {
         'tasks': tasks,
         'recommended_ids': recommended_ids,
-        'geojson': geojson,
+        'geojson': _build_task_geojson(tasks, recommended_ids),
         'volunteer_lat': volunteer_lat,
         'volunteer_lon': volunteer_lon,
         'location_source': request.session.get('location_source', 'gps'),
-        'verified_orgs': verified_orgs,
+        'verified_orgs': Organization.objects.filter(is_verified=True),
         'selected_orgs': selected_orgs,
         'radius_km': radius_km,
     }
